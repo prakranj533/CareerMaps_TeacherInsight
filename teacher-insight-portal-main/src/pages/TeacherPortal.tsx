@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { fetchGoogleSheetData } from "@/lib/googleSheets";
@@ -9,7 +10,7 @@ import { TeacherOverview } from "@/components/teacher/TeacherOverview";
 import { TeacherList } from "@/components/teacher/TeacherList";
 import { PerformanceAnalytics } from "@/components/teacher/PerformanceAnalytics";
 import { TeacherInsights } from "@/components/teacher/TeacherInsights";
-import { Loader2, ArrowLeft, Search, Filter, Download, RefreshCw, Plus, ListOrdered, BarChart2, Lightbulb, Info, Calendar } from "lucide-react";
+import { Loader2, ArrowLeft, Search, Filter, Download, RefreshCw, Plus, ListOrdered, BarChart2, Lightbulb, Info, Calendar, ClipboardList } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -30,6 +31,43 @@ import {
 } from "recharts";
 
 const TREEMAP_PALETTE = ["#6D28D9", "#0EA5E9", "#22C55E", "#F97316", "#FB7185", "#14B8A6", "#7C3AED", "#FACC15"];
+const TEACHER_RULES_STORAGE_KEY = "teacher-portal-rules";
+
+interface TeacherRule {
+  id: string;
+  text: string;
+}
+
+const DEFAULT_TEACHER_RULES: TeacherRule[] = [
+  { id: "1", text: "Teachers are paid ₹300 per class." },
+  { id: "2", text: "Quality is measured for each class and shared in the Teacher Portal." },
+  { id: "3", text: "Quality multiplication is applied when the number of classes is above 25." },
+  { id: "4", text: "Class allocation is based on quality and hierarchy." },
+  { id: "5", text: "The maximum number of classes is 60. Exceptions must be pre-approved." },
+  {
+    id: "6",
+    text: "Senior teachers with centers under them receive a new-teacher development incentive of 10% of the earnings from a new teacher teaching at their center.",
+  },
+];
+
+const readTeacherRules = (): TeacherRule[] => {
+  try {
+    const storedRules = window.localStorage.getItem(TEACHER_RULES_STORAGE_KEY);
+    if (!storedRules) return DEFAULT_TEACHER_RULES;
+
+    const parsedRules: unknown = JSON.parse(storedRules);
+    if (
+      Array.isArray(parsedRules) &&
+      parsedRules.every((rule) => typeof rule.id === "string" && typeof rule.text === "string")
+    ) {
+      return parsedRules as TeacherRule[];
+    }
+  } catch {
+    return DEFAULT_TEACHER_RULES;
+  }
+
+  return DEFAULT_TEACHER_RULES;
+};
 
 export interface TeacherData {
   name: string;
@@ -62,10 +100,54 @@ const TeacherPortal = () => {
   const [subjectFilter, setSubjectFilter] = useState("all");
   const [performanceFilter, setPerformanceFilter] = useState("all");
   const [monthFilter, setMonthFilter] = useState("all");
+  const [teacherRules, setTeacherRules] = useState<TeacherRule[]>(readTeacherRules);
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+  const [isAddingRule, setIsAddingRule] = useState(false);
+  const [draftRuleText, setDraftRuleText] = useState("");
   
   // All hooks must be called unconditionally at the top level
   const { toast } = useToast();
   const navigate = useNavigate();
+
+  const startAddingRule = () => {
+    setEditingRuleId(null);
+    setDraftRuleText("");
+    setIsAddingRule(true);
+  };
+
+  const startEditingRule = (rule: TeacherRule) => {
+    setIsAddingRule(false);
+    setEditingRuleId(rule.id);
+    setDraftRuleText(rule.text);
+  };
+
+  const cancelRuleEdit = () => {
+    setEditingRuleId(null);
+    setIsAddingRule(false);
+    setDraftRuleText("");
+  };
+
+  const saveRule = () => {
+    const text = draftRuleText.trim();
+    if (!text) return;
+
+    const updatedRules = isAddingRule
+      ? [...teacherRules, { id: crypto.randomUUID(), text }]
+      : teacherRules.map((rule) => (rule.id === editingRuleId ? { ...rule, text } : rule));
+
+    setTeacherRules(updatedRules);
+    try {
+      window.localStorage.setItem(TEACHER_RULES_STORAGE_KEY, JSON.stringify(updatedRules));
+      toast({ title: "Rules saved", description: "Your changes are saved in this browser." });
+    } catch {
+      toast({
+        title: "Unable to save rules",
+        description: "Changes could not be saved in this browser.",
+        variant: "destructive",
+      });
+    }
+    cancelRuleEdit();
+  };
   
   const assignedTeachers = useMemo(
     () => teachers.filter((teacher) => teacher.hasAssignedTeacher),
@@ -393,10 +475,14 @@ const TeacherPortal = () => {
 
         <Tabs defaultValue="overview" className="w-full space-y-6">
           <div className="flex flex-col gap-3 border-b pb-3 sm:flex-row sm:items-center sm:justify-between">
-            <TabsList className="bg-muted/60">
-              <TabsTrigger value="overview" className="px-6">Overview</TabsTrigger>
-              <TabsTrigger value="workspace" className="px-6">Workspace</TabsTrigger>
-              <TabsTrigger value="rankings" className="px-6">Rankings</TabsTrigger>
+            <TabsList className="h-auto flex-wrap bg-muted/60">
+              <TabsTrigger value="overview" className="px-4 sm:px-6">Overview</TabsTrigger>
+              <TabsTrigger value="workspace" className="px-4 sm:px-6">Workspace</TabsTrigger>
+              <TabsTrigger value="rankings" className="px-4 sm:px-6">Rankings</TabsTrigger>
+              <TabsTrigger value="rules" className="flex items-center gap-2 px-4 sm:px-6">
+                <ClipboardList className="h-4 w-4" />
+                Rules Sheet
+              </TabsTrigger>
             </TabsList>
             <div className="text-xs uppercase tracking-wide text-muted-foreground">
               Last refresh {new Date().toLocaleString()}
@@ -590,6 +676,78 @@ const TeacherPortal = () => {
           <TabsContent value="workspace" className="space-y-6">
             {/* Overview Cards */}
             <TeacherOverview teachers={filteredTeachers} totalClasses={totalClasses} />
+          </TabsContent>
+
+          <TabsContent value="rules" className="space-y-6">
+            <Card className="border-none bg-gradient-to-br from-white via-sky-50 to-emerald-50 shadow-lg">
+              <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="space-y-2">
+                  <p className="text-xs uppercase tracking-[0.3em] text-primary/70">Teacher guidelines</p>
+                  <CardTitle className="text-3xl font-semibold text-slate-900">Rules Sheet</CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Add rules or edit their wording. Changes are saved in this browser.
+                  </p>
+                </div>
+                <Button onClick={startAddingRule} disabled={isAddingRule || editingRuleId !== null}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add rule
+                </Button>
+              </CardHeader>
+              <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {teacherRules.map((rule, index) => (
+                  <section key={rule.id} className="rounded-2xl border border-white/80 bg-white/80 p-5 shadow-sm">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <p className="text-sm font-semibold uppercase tracking-wide text-primary">
+                        Rule {String(index + 1).padStart(2, "0")}
+                      </p>
+                      {editingRuleId !== rule.id && (
+                        <Button variant="outline" size="sm" onClick={() => startEditingRule(rule)} disabled={isAddingRule}>
+                          Edit wording
+                        </Button>
+                      )}
+                    </div>
+                    {editingRuleId === rule.id ? (
+                      <div className="space-y-3">
+                        <Textarea
+                          aria-label={`Edit rule ${index + 1}`}
+                          autoFocus
+                          rows={4}
+                          value={draftRuleText}
+                          onChange={(event) => setDraftRuleText(event.target.value)}
+                        />
+                        <div className="flex justify-end gap-2">
+                          <Button variant="ghost" size="sm" onClick={cancelRuleEdit}>Cancel</Button>
+                          <Button size="sm" onClick={saveRule} disabled={!draftRuleText.trim()}>Save</Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="leading-relaxed text-slate-700">{rule.text}</p>
+                    )}
+                  </section>
+                ))}
+                {isAddingRule && (
+                  <section className="rounded-2xl border border-primary/30 bg-white/90 p-5 shadow-sm">
+                    <p className="mb-3 text-sm font-semibold uppercase tracking-wide text-primary">
+                      Rule {String(teacherRules.length + 1).padStart(2, "0")}
+                    </p>
+                    <div className="space-y-3">
+                      <Textarea
+                        aria-label="New rule"
+                        autoFocus
+                        rows={4}
+                        placeholder="Write a new teacher rule..."
+                        value={draftRuleText}
+                        onChange={(event) => setDraftRuleText(event.target.value)}
+                      />
+                      <div className="flex justify-end gap-2">
+                        <Button variant="ghost" size="sm" onClick={cancelRuleEdit}>Cancel</Button>
+                        <Button size="sm" onClick={saveRule} disabled={!draftRuleText.trim()}>Save rule</Button>
+                      </div>
+                    </div>
+                  </section>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="rankings" className="space-y-6">
