@@ -130,10 +130,10 @@ const TeacherPortal = () => {
       (snapshot) => {
         setTeacherRules(snapshot.exists() ? parseTeacherRules(snapshot.data().rules) : DEFAULT_TEACHER_RULES);
       },
-      () => {
+      (error) => {
         toast({
           title: "Unable to load shared rules",
-          description: "Check that Firestore is enabled and its rules are deployed.",
+          description: `Firestore error (${error.code}). Check that Firestore is enabled and its rules are deployed.`,
           variant: "destructive",
         });
       }
@@ -156,10 +156,20 @@ const TeacherPortal = () => {
           variant: "destructive",
         });
       }
-    } catch {
+    } catch (error) {
+      const code =
+        typeof error === "object" && error !== null && "code" in error ? String(error.code) : "unknown";
+      const description =
+        code === "auth/operation-not-allowed"
+          ? "Enable Google as a Firebase Authentication provider."
+          : code === "auth/unauthorized-domain"
+            ? "Add this site to Firebase Authentication's authorized domains."
+            : code === "auth/popup-blocked"
+              ? "Allow pop-ups for this site, then try again."
+              : "Could not sign in with Google. Check Firebase Authentication settings.";
       toast({
         title: "Sign-in failed",
-        description: "Could not sign in with Google. Please try again.",
+        description: `${description} (${code})`,
         variant: "destructive",
       });
     } finally {
