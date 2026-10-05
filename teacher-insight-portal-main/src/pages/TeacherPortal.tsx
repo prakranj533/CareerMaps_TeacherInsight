@@ -43,7 +43,7 @@ interface TeacherRule {
 }
 
 const DEFAULT_TEACHER_RULES: TeacherRule[] = [
-  { id: "1", text: "Teachers are paid ₹300 per class." },
+  { id: "1", text: "Teachers are paid per class" },
   { id: "2", text: "Quality is measured for each class and shared in the Teacher Portal." },
   { id: "3", text: "Quality multiplication is applied when the number of classes is above 25." },
   { id: "4", text: "Class allocation is based on quality and hierarchy." },
