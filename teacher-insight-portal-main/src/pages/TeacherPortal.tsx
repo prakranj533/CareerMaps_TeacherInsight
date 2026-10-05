@@ -10,11 +10,14 @@ import { TeacherOverview } from "@/components/teacher/TeacherOverview";
 import { TeacherList } from "@/components/teacher/TeacherList";
 import { PerformanceAnalytics } from "@/components/teacher/PerformanceAnalytics";
 import { TeacherInsights } from "@/components/teacher/TeacherInsights";
-import { Loader2, ArrowLeft, Search, Filter, Download, RefreshCw, Plus, ListOrdered, BarChart2, Lightbulb, Info, Calendar, ClipboardList } from "lucide-react";
+import { Loader2, ArrowLeft, Search, Filter, Download, RefreshCw, Plus, ListOrdered, BarChart2, Lightbulb, Info, Calendar, ClipboardList, LogIn, LogOut } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { TrendingUp } from "lucide-react";
+import { GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from "firebase/auth";
+import { doc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
+import { firebaseAuth, firestore, isFirebaseConfigured } from "@/lib/firebase";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import {
   LineChart as ReLineChart,
@@ -31,7 +34,8 @@ import {
 } from "recharts";
 
 const TREEMAP_PALETTE = ["#6D28D9", "#0EA5E9", "#22C55E", "#F97316", "#FB7185", "#14B8A6", "#7C3AED", "#FACC15"];
-const TEACHER_RULES_STORAGE_KEY = "teacher-portal-rules";
+const ADMIN_EMAIL = "prakranj@gmail.com";
+const TEACHER_RULES_DOCUMENT = ["settings", "teacherRules"] as const;
 
 interface TeacherRule {
   id: string;
@@ -50,24 +54,17 @@ const DEFAULT_TEACHER_RULES: TeacherRule[] = [
   },
 ];
 
-const readTeacherRules = (): TeacherRule[] => {
-  try {
-    const storedRules = window.localStorage.getItem(TEACHER_RULES_STORAGE_KEY);
-    if (!storedRules) return DEFAULT_TEACHER_RULES;
-
-    const parsedRules: unknown = JSON.parse(storedRules);
-    if (
-      Array.isArray(parsedRules) &&
-      parsedRules.every((rule) => typeof rule.id === "string" && typeof rule.text === "string")
-    ) {
-      return parsedRules as TeacherRule[];
-    }
-  } catch {
-    return DEFAULT_TEACHER_RULES;
-  }
-
-  return DEFAULT_TEACHER_RULES;
-};
+const parseTeacherRules = (value: unknown): TeacherRule[] =>
+  Array.isArray(value) &&
+  value.every(
+    (rule) =>
+      rule !== null &&
+      typeof rule === "object" &&
+      typeof rule.id === "string" &&
+      typeof rule.text === "string"
+  )
+    ? value
+    : DEFAULT_TEACHER_RULES;
 
 export interface TeacherData {
   name: string;
@@ -100,7 +97,9 @@ const TeacherPortal = () => {
   const [subjectFilter, setSubjectFilter] = useState("all");
   const [performanceFilter, setPerformanceFilter] = useState("all");
   const [monthFilter, setMonthFilter] = useState("all");
-  const [teacherRules, setTeacherRules] = useState<TeacherRule[]>(readTeacherRules);
+  const [teacherRules, setTeacherRules] = useState<TeacherRule[]>(DEFAULT_TEACHER_RULES);
+  const [adminEmail, setAdminEmail] = useState<string | null>(null);
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [isAddingRule, setIsAddingRule] = useState(false);
   const [draftRuleText, setDraftRuleText] = useState("");
@@ -109,13 +108,78 @@ const TeacherPortal = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
 
+  useEffect(() => {
+    if (!firebaseAuth) return;
+
+    return onAuthStateChanged(firebaseAuth, (user) => {
+      const email = user?.email?.toLowerCase();
+      if (user && (email !== ADMIN_EMAIL || !user.emailVerified)) {
+        setAdminEmail(null);
+        void signOut(firebaseAuth);
+        return;
+      }
+      setAdminEmail(user?.email ?? null);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!firestore) return;
+
+    return onSnapshot(
+      doc(firestore, ...TEACHER_RULES_DOCUMENT),
+      (snapshot) => {
+        setTeacherRules(snapshot.exists() ? parseTeacherRules(snapshot.data().rules) : DEFAULT_TEACHER_RULES);
+      },
+      () => {
+        toast({
+          title: "Unable to load shared rules",
+          description: "Check that Firestore is enabled and its rules are deployed.",
+          variant: "destructive",
+        });
+      }
+    );
+  }, [toast]);
+
+  const handleAdminSignIn = async () => {
+    if (!firebaseAuth) return;
+
+    setIsAuthenticating(true);
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ login_hint: ADMIN_EMAIL, prompt: "select_account" });
+    try {
+      const result = await signInWithPopup(firebaseAuth, provider);
+      if (result.user.email?.toLowerCase() !== ADMIN_EMAIL || !result.user.emailVerified) {
+        await signOut(firebaseAuth);
+        toast({
+          title: "Admin access denied",
+          description: "This Google account is not authorized to edit the rules.",
+          variant: "destructive",
+        });
+      }
+    } catch {
+      toast({
+        title: "Sign-in failed",
+        description: "Could not sign in with Google. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAuthenticating(false);
+    }
+  };
+
+  const handleAdminSignOut = async () => {
+    if (firebaseAuth) await signOut(firebaseAuth);
+  };
+
   const startAddingRule = () => {
+    if (!adminEmail) return;
     setEditingRuleId(null);
     setDraftRuleText("");
     setIsAddingRule(true);
   };
 
   const startEditingRule = (rule: TeacherRule) => {
+    if (!adminEmail) return;
     setIsAddingRule(false);
     setEditingRuleId(rule.id);
     setDraftRuleText(rule.text);
@@ -127,26 +191,29 @@ const TeacherPortal = () => {
     setDraftRuleText("");
   };
 
-  const saveRule = () => {
+  const saveRule = async () => {
     const text = draftRuleText.trim();
-    if (!text) return;
+    if (!text || !adminEmail || !firestore) return;
 
     const updatedRules = isAddingRule
       ? [...teacherRules, { id: crypto.randomUUID(), text }]
       : teacherRules.map((rule) => (rule.id === editingRuleId ? { ...rule, text } : rule));
 
-    setTeacherRules(updatedRules);
     try {
-      window.localStorage.setItem(TEACHER_RULES_STORAGE_KEY, JSON.stringify(updatedRules));
-      toast({ title: "Rules saved", description: "Your changes are saved in this browser." });
+      await setDoc(doc(firestore, ...TEACHER_RULES_DOCUMENT), {
+        rules: updatedRules,
+        updatedAt: serverTimestamp(),
+      });
+      setTeacherRules(updatedRules);
+      toast({ title: "Rules saved", description: "Your changes are now shared with everyone." });
+      cancelRuleEdit();
     } catch {
       toast({
         title: "Unable to save rules",
-        description: "Changes could not be saved in this browser.",
+        description: "Check your admin access and Firestore configuration, then try again.",
         variant: "destructive",
       });
     }
-    cancelRuleEdit();
   };
   
   const assignedTeachers = useMemo(
@@ -685,13 +752,31 @@ const TeacherPortal = () => {
                   <p className="text-xs uppercase tracking-[0.3em] text-primary/70">Teacher guidelines</p>
                   <CardTitle className="text-3xl font-semibold text-slate-900">Rules Sheet</CardTitle>
                   <p className="text-sm text-muted-foreground">
-                    Add rules or edit their wording. Changes are saved in this browser.
+                    Only the admin can edit. Rule updates are shared with everyone.
                   </p>
                 </div>
-                <Button onClick={startAddingRule} disabled={isAddingRule || editingRuleId !== null}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add rule
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  {!isFirebaseConfigured ? (
+                    <p className="text-sm text-muted-foreground">Admin login requires Firebase configuration.</p>
+                  ) : adminEmail ? (
+                    <>
+                      <span className="text-sm text-muted-foreground">Signed in as {adminEmail}</span>
+                      <Button variant="outline" onClick={handleAdminSignOut}>
+                        <LogOut className="mr-2 h-4 w-4" />
+                        Sign out
+                      </Button>
+                      <Button onClick={startAddingRule} disabled={isAddingRule || editingRuleId !== null}>
+                        <Plus className="mr-2 h-4 w-4" />
+                        Add rule
+                      </Button>
+                    </>
+                  ) : (
+                    <Button onClick={handleAdminSignIn} disabled={isAuthenticating}>
+                      {isAuthenticating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogIn className="mr-2 h-4 w-4" />}
+                      Admin login
+                    </Button>
+                  )}
+                </div>
               </CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {teacherRules.map((rule, index) => (
@@ -700,13 +785,13 @@ const TeacherPortal = () => {
                       <p className="text-sm font-semibold uppercase tracking-wide text-primary">
                         Rule {String(index + 1).padStart(2, "0")}
                       </p>
-                      {editingRuleId !== rule.id && (
+                      {adminEmail && editingRuleId !== rule.id && (
                         <Button variant="outline" size="sm" onClick={() => startEditingRule(rule)} disabled={isAddingRule}>
                           Edit wording
                         </Button>
                       )}
                     </div>
-                    {editingRuleId === rule.id ? (
+                    {adminEmail && editingRuleId === rule.id ? (
                       <div className="space-y-3">
                         <Textarea
                           aria-label={`Edit rule ${index + 1}`}
@@ -725,7 +810,7 @@ const TeacherPortal = () => {
                     )}
                   </section>
                 ))}
-                {isAddingRule && (
+                {adminEmail && isAddingRule && (
                   <section className="rounded-2xl border border-primary/30 bg-white/90 p-5 shadow-sm">
                     <p className="mb-3 text-sm font-semibold uppercase tracking-wide text-primary">
                       Rule {String(teacherRules.length + 1).padStart(2, "0")}

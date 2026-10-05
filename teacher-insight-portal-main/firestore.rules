@@ -1,0 +1,21 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /settings/teacherRules {
+      allow read: if true;
+      allow create, update: if request.auth != null
+        && request.auth.token.email == 'prakranj@gmail.com'
+        && request.auth.token.email_verified == true
+        && request.resource.data.keys().hasOnly(['rules', 'updatedAt'])
+        && request.resource.data.keys().hasAll(['rules', 'updatedAt'])
+        && request.resource.data.rules is list
+        && request.resource.data.rules.size() <= 100
+        && request.resource.data.updatedAt is timestamp;
+      allow delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
