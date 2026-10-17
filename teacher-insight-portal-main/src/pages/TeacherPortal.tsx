@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +13,7 @@ import { TeacherOverview } from "@/components/teacher/TeacherOverview";
 import { TeacherList } from "@/components/teacher/TeacherList";
 import { PerformanceAnalytics } from "@/components/teacher/PerformanceAnalytics";
 import { TeacherInsights } from "@/components/teacher/TeacherInsights";
-import { Loader2, ArrowLeft, Search, Filter, Download, RefreshCw, Plus, ListOrdered, BarChart2, Lightbulb, Info, Calendar, ClipboardList, LogIn, LogOut } from "lucide-react";
+import { Loader2, ArrowLeft, Search, Filter, Download, RefreshCw, Plus, ListOrdered, BarChart2, Lightbulb, Info, Calendar, ClipboardList, LogIn, LogOut, Eye } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -330,38 +330,70 @@ const TeacherPortal = () => {
     [userClaim, assignedTeachers]
   );
 
-  // SHGs the signed-in teacher reports on (as punch "reporting teacher" or
-  // field reviewer) — then everything logged at those centers, by anyone.
-  const signedInShgData = useMemo(() => {
-    if (!signedInTeacher) return { punches: [] as TeacherPunchEntry[], reviews: [] as TeacherReviewEntry[] };
-    const myCenters = [
-      ...punchEntries
-        .filter(
-          (entry) =>
-            entry.reportingTeacher &&
-            (matchTeacherName(entry.reportingTeacher, canonicalNames) ?? entry.reportingTeacher) ===
-              signedInTeacher.name
-        )
-        .map((entry) => entry.center),
-      ...reviewEntries
-        .filter(
-          (entry) =>
-            entry.reviewer &&
-            (matchTeacherName(entry.reviewer, canonicalNames) ?? entry.reviewer) === signedInTeacher.name
-        )
-        .map((entry) => entry.shg),
-    ].filter(Boolean);
-    if (!myCenters.length) return { punches: [] as TeacherPunchEntry[], reviews: [] as TeacherReviewEntry[] };
+  // SHGs a teacher reports on (as punch "reporting teacher" or field
+  // reviewer) — then everything logged at those centers, by anyone.
+  const getShgData = useCallback(
+    (teacherName: string) => {
+      const myCenters = [
+        ...punchEntries
+          .filter(
+            (entry) =>
+              entry.reportingTeacher &&
+              (matchTeacherName(entry.reportingTeacher, canonicalNames) ?? entry.reportingTeacher) ===
+                teacherName
+          )
+          .map((entry) => entry.center),
+        ...reviewEntries
+          .filter(
+            (entry) =>
+              entry.reviewer &&
+              (matchTeacherName(entry.reviewer, canonicalNames) ?? entry.reviewer) === teacherName
+          )
+          .map((entry) => entry.shg),
+      ].filter(Boolean);
+      if (!myCenters.length) return { punches: [] as TeacherPunchEntry[], reviews: [] as TeacherReviewEntry[] };
 
-    return {
-      punches: punchEntries.filter(
-        (entry) => entry.center && myCenters.some((center) => centersMatch(center, entry.center))
-      ),
-      reviews: reviewEntries.filter(
-        (entry) => entry.shg && myCenters.some((center) => centersMatch(center, entry.shg))
-      ),
-    };
-  }, [signedInTeacher, punchEntries, reviewEntries, canonicalNames]);
+      return {
+        punches: punchEntries.filter(
+          (entry) => entry.center && myCenters.some((center) => centersMatch(center, entry.center))
+        ),
+        reviews: reviewEntries.filter(
+          (entry) => entry.shg && myCenters.some((center) => centersMatch(center, entry.shg))
+        ),
+      };
+    },
+    [punchEntries, reviewEntries, canonicalNames]
+  );
+
+  const signedInShgData = useMemo(
+    () =>
+      signedInTeacher
+        ? getShgData(signedInTeacher.name)
+        : { punches: [] as TeacherPunchEntry[], reviews: [] as TeacherReviewEntry[] },
+    [signedInTeacher, getShgData]
+  );
+
+  // Admin "view as teacher" preview — same props the real login gets.
+  const [previewName, setPreviewName] = useState<string>("");
+  const previewTeacher = useMemo(
+    () => assignedTeachers.find((teacher) => teacher.name === previewName) ?? null,
+    [assignedTeachers, previewName]
+  );
+  const previewShgData = useMemo(
+    () =>
+      previewTeacher
+        ? getShgData(previewTeacher.name)
+        : { punches: [] as TeacherPunchEntry[], reviews: [] as TeacherReviewEntry[] },
+    [previewTeacher, getShgData]
+  );
+  const previewEmail = useMemo(() => {
+    if (!previewName) return "";
+    return (
+      claims.find(
+        (claim) => normalizeTeacherKey(claim.teacherName) === normalizeTeacherKey(previewName)
+      )?.email ?? "preview (no login linked)"
+    );
+  }, [claims, previewName]);
 
   const handleClaimName = async (teacherName: string) => {
     if (!firestore || !authUser?.email || !teacherName) return;
@@ -817,6 +849,7 @@ const TeacherPortal = () => {
               <TabsTrigger value="workspace" className="px-4 sm:px-6">Workspace</TabsTrigger>
               <TabsTrigger value="classes" className="px-4 sm:px-6">Classes</TabsTrigger>
               <TabsTrigger value="reviews" className="px-4 sm:px-6">Reviews</TabsTrigger>
+              <TabsTrigger value="preview" className="px-4 sm:px-6">Teacher view</TabsTrigger>
               <TabsTrigger value="rankings" className="px-4 sm:px-6">Rankings</TabsTrigger>
               <TabsTrigger value="rules" className="flex items-center gap-2 px-4 sm:px-6">
                 <ClipboardList className="h-4 w-4" />
@@ -1034,6 +1067,47 @@ const TeacherPortal = () => {
               description="Reviewer feedback logged per class visit, grouped per teacher below."
               breakdown={reviewIndex}
             />
+          </TabsContent>
+
+          <TabsContent value="preview" className="space-y-4">
+            <Card className="border-none bg-white/90 shadow-lg">
+              <CardContent className="flex flex-wrap items-center gap-3 p-4">
+                <Eye className="h-5 w-5 text-primary" />
+                <p className="text-sm font-medium text-slate-700">See the portal exactly as a teacher does:</p>
+                <Select value={previewName} onValueChange={setPreviewName}>
+                  <SelectTrigger className="w-56">
+                    <SelectValue placeholder="Pick a teacher" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {assignedTeachers.map((teacher) => (
+                      <SelectItem key={teacher.name} value={teacher.name}>
+                        {teacher.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {previewName && (
+                  <Button variant="outline" size="sm" onClick={() => setPreviewName("")}>
+                    Clear
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+
+            {previewTeacher && (
+              <TeacherDashboard
+                teacher={previewTeacher}
+                cohort={assignedTeachers}
+                rules={teacherRules}
+                punches={punchIndex.get(previewTeacher.name) ?? []}
+                reviews={reviewIndex.get(previewTeacher.name) ?? []}
+                shgPunches={previewShgData.punches}
+                shgReviews={previewShgData.reviews}
+                email={previewEmail}
+                onSignOut={handleSignOut}
+                onBack={() => setPreviewName("")}
+              />
+            )}
           </TabsContent>
 
           <TabsContent value="rules" className="space-y-6">
