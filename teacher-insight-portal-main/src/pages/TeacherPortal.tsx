@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { fetchGoogleSheetData } from "@/lib/googleSheets";
 import { buildPunchIndex, fetchTeacherPunchData, type TeacherPunchEntry } from "@/lib/teacherPunches";
+import { buildReviewIndex, buildReviewerIndex, fetchTeacherReviewData, type TeacherReviewEntry } from "@/lib/teacherReviews";
 import { TeacherOverview } from "@/components/teacher/TeacherOverview";
 import { TeacherList } from "@/components/teacher/TeacherList";
 import { PerformanceAnalytics } from "@/components/teacher/PerformanceAnalytics";
@@ -30,6 +31,7 @@ import {
 } from "@/lib/teacherDirectory";
 import { TeacherDashboard } from "@/components/teacher/TeacherDashboard";
 import { PunchAnalytics } from "@/components/teacher/PunchAnalytics";
+import { TeacherReviews } from "@/components/teacher/TeacherReviews";
 import { TeacherClaimScreen, TeacherNoDataScreen, TeacherPendingScreen, TeacherSignInScreen } from "@/components/teacher/TeacherAccess";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import {
@@ -106,6 +108,7 @@ const TeacherPortal = () => {
   // State declarations at the top level
   const [teachers, setTeachers] = useState<TeacherData[]>([]);
   const [punchEntries, setPunchEntries] = useState<TeacherPunchEntry[]>([]);
+  const [reviewEntries, setReviewEntries] = useState<TeacherReviewEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [subjectFilter, setSubjectFilter] = useState("all");
@@ -302,6 +305,16 @@ const TeacherPortal = () => {
   const punchIndex = useMemo(
     () => buildPunchIndex(punchEntries, assignedTeachers.map((teacher) => teacher.name)),
     [punchEntries, assignedTeachers]
+  );
+
+  const reviewIndex = useMemo(
+    () => buildReviewIndex(reviewEntries, assignedTeachers.map((teacher) => teacher.name)),
+    [reviewEntries, assignedTeachers]
+  );
+
+  const reviewerIndex = useMemo(
+    () => buildReviewerIndex(reviewEntries, assignedTeachers.map((teacher) => teacher.name)),
+    [reviewEntries, assignedTeachers]
   );
 
   const signedInTeacher = useMemo(
@@ -565,16 +578,21 @@ const TeacherPortal = () => {
   const loadTeacherData = async () => {
     try {
       setLoading(true);
-      // Punch data is additive — a failure here shouldn't block the portal.
-      const [data, punches] = await Promise.all([
+      // Punch and review data are additive — failures shouldn't block the portal.
+      const [data, punches, reviews] = await Promise.all([
         fetchGoogleSheetData(),
         fetchTeacherPunchData().catch((error) => {
           console.error("Failed to fetch teacher punch data:", error);
           return [] as TeacherPunchEntry[];
         }),
+        fetchTeacherReviewData().catch((error) => {
+          console.error("Failed to fetch teacher review data:", error);
+          return [] as TeacherReviewEntry[];
+        }),
       ]);
       setTeachers(data);
       setPunchEntries(punches);
+      setReviewEntries(reviews);
     } catch (error) {
       toast({
         title: "Error loading data",
@@ -652,6 +670,7 @@ const TeacherPortal = () => {
         cohort={assignedTeachers}
         rules={teacherRules}
         punches={punchIndex.get(signedInTeacher.name) ?? []}
+        reviews={reviewIndex.get(signedInTeacher.name) ?? []}
         email={authUser.email}
         onSignOut={handleSignOut}
         onBack={() => navigate("/")}
@@ -759,6 +778,7 @@ const TeacherPortal = () => {
               <TabsTrigger value="overview" className="px-4 sm:px-6">Overview</TabsTrigger>
               <TabsTrigger value="workspace" className="px-4 sm:px-6">Workspace</TabsTrigger>
               <TabsTrigger value="classes" className="px-4 sm:px-6">Classes</TabsTrigger>
+              <TabsTrigger value="reviews" className="px-4 sm:px-6">Reviews</TabsTrigger>
               <TabsTrigger value="rankings" className="px-4 sm:px-6">Rankings</TabsTrigger>
               <TabsTrigger value="rules" className="flex items-center gap-2 px-4 sm:px-6">
                 <ClipboardList className="h-4 w-4" />
@@ -965,6 +985,16 @@ const TeacherPortal = () => {
               title="All class records"
               description="Every class logged on the teacher punch form, grouped per teacher below."
               breakdown={punchIndex}
+              activity={reviewerIndex}
+            />
+          </TabsContent>
+
+          <TabsContent value="reviews" className="space-y-6">
+            <TeacherReviews
+              entries={reviewEntries}
+              title="All field reviews"
+              description="Reviewer feedback logged per class visit, grouped per teacher below."
+              breakdown={reviewIndex}
             />
           </TabsContent>
 

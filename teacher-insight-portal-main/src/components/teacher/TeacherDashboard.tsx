@@ -9,13 +9,16 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/
 import { LineChart, Line, XAxis, YAxis, CartesianGrid } from "recharts";
 import { ArrowLeft, BookOpen, ClipboardCheck, ClipboardList, LogOut, Trophy, Users } from "lucide-react";
 import type { TeacherPunchEntry } from "@/lib/teacherPunches";
+import type { TeacherReviewEntry } from "@/lib/teacherReviews";
 import { PunchAnalytics } from "@/components/teacher/PunchAnalytics";
+import { TeacherReviews } from "@/components/teacher/TeacherReviews";
 
 interface TeacherDashboardProps {
   teacher: TeacherData;
   cohort: TeacherData[];
   rules: TeacherRule[];
   punches: TeacherPunchEntry[];
+  reviews: TeacherReviewEntry[];
   email: string;
   onSignOut: () => void;
   onBack: () => void;
@@ -87,15 +90,16 @@ const scopeTeacherToMonth = (teacher: TeacherData, monthKey: string): TeacherDat
   };
 };
 
-export const TeacherDashboard = ({ teacher, cohort, rules, punches, email, onSignOut, onBack }: TeacherDashboardProps) => {
+export const TeacherDashboard = ({ teacher, cohort, rules, punches, reviews, email, onSignOut, onBack }: TeacherDashboardProps) => {
   const [month, setMonth] = useState("all");
 
   const availableMonths = useMemo(() => {
     const set = new Set<string>();
     teacher.sessions.forEach((session) => session.monthKey && set.add(session.monthKey));
     punches.forEach((entry) => entry.monthKey && set.add(entry.monthKey));
+    reviews.forEach((entry) => entry.monthKey && set.add(entry.monthKey));
     return Array.from(set).sort((a, b) => b.localeCompare(a));
-  }, [teacher, punches]);
+  }, [teacher, punches, reviews]);
 
   const scopedTeacher = useMemo(() => scopeTeacherToMonth(teacher, month), [teacher, month]);
   const scopedCohort = useMemo(
@@ -322,6 +326,13 @@ export const TeacherDashboard = ({ teacher, cohort, rules, punches, email, onSig
           entries={punches}
           title="Your classes"
           description="Classes you've logged on the punch form — counts, students, centers and topics."
+          month={month}
+        />
+
+        <TeacherReviews
+          entries={reviews}
+          title="Feedback about you"
+          description="Field-review notes logged about your classes."
           month={month}
         />
 

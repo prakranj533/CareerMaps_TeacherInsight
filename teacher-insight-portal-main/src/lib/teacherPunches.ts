@@ -224,7 +224,7 @@ function parseBoolean(value: string): boolean {
   return ["yes", "y", "true", "1"].includes(normalized);
 }
 
-function extractDateMetadata(value: string): { date?: string; monthKey?: string } {
+export function extractDateMetadata(value: string): { date?: string; monthKey?: string } {
   if (!value) return {};
   const trimmed = value.trim();
   if (!trimmed) return {};
@@ -276,7 +276,7 @@ function padNumber(value: string | number): string {
   return String(value).padStart(2, "0");
 }
 
-function parseCSV(text: string): string[][] {
+export function parseCSV(text: string): string[][] {
   const rows: string[][] = [];
   let currentRow: string[] = [];
   let currentField = "";
