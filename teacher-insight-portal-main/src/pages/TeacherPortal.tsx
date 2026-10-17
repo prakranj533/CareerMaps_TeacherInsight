@@ -16,8 +16,18 @@ import { useNavigate } from "react-router-dom";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { TrendingUp } from "lucide-react";
 import { GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from "firebase/auth";
-import { doc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
+import { collection, doc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
 import { firebaseAuth, firestore, isFirebaseConfigured } from "@/lib/firebase";
+import {
+  claimTeacherName,
+  normalizeTeacherKey,
+  parseTeacherClaims,
+  releaseTeacherName,
+  TEACHER_DIRECTORY_COLLECTION,
+  type TeacherClaim,
+} from "@/lib/teacherDirectory";
+import { TeacherDashboard } from "@/components/teacher/TeacherDashboard";
+import { TeacherClaimScreen, TeacherNoDataScreen, TeacherSignInScreen } from "@/components/teacher/TeacherAccess";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import {
   LineChart as ReLineChart,
@@ -98,7 +108,11 @@ const TeacherPortal = () => {
   const [performanceFilter, setPerformanceFilter] = useState("all");
   const [monthFilter, setMonthFilter] = useState("all");
   const [teacherRules, setTeacherRules] = useState<TeacherRule[]>(DEFAULT_TEACHER_RULES);
-  const [adminEmail, setAdminEmail] = useState<string | null>(null);
+  const [authUser, setAuthUser] = useState<{ email: string; displayName: string | null } | null>(null);
+  const [authReady, setAuthReady] = useState(!isFirebaseConfigured);
+  const [claims, setClaims] = useState<TeacherClaim[]>([]);
+  const [claimsReady, setClaimsReady] = useState(false);
+  const [isClaiming, setIsClaiming] = useState(false);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [isAddingRule, setIsAddingRule] = useState(false);
@@ -112,15 +126,21 @@ const TeacherPortal = () => {
     if (!firebaseAuth) return;
 
     return onAuthStateChanged(firebaseAuth, (user) => {
-      const email = user?.email?.toLowerCase();
-      if (user && (email !== ADMIN_EMAIL || !user.emailVerified)) {
-        setAdminEmail(null);
+      if (user && !user.emailVerified) {
+        setAuthUser(null);
+        setAuthReady(true);
         void signOut(firebaseAuth);
+        toast({
+          title: "Sign-in rejected",
+          description: "Your Google account's email address isn't verified, so it can't be used here.",
+          variant: "destructive",
+        });
         return;
       }
-      setAdminEmail(user?.email ?? null);
+      setAuthUser(user?.email ? { email: user.email, displayName: user.displayName ?? null } : null);
+      setAuthReady(true);
     });
-  }, []);
+  }, [toast]);
 
   useEffect(() => {
     if (!firestore) return;
@@ -140,22 +160,39 @@ const TeacherPortal = () => {
     );
   }, [toast]);
 
-  const handleAdminSignIn = async () => {
+  useEffect(() => {
+    if (!firestore || !authUser) {
+      setClaims([]);
+      setClaimsReady(false);
+      return;
+    }
+
+    setClaimsReady(false);
+    return onSnapshot(
+      collection(firestore, TEACHER_DIRECTORY_COLLECTION),
+      (snapshot) => {
+        setClaims(parseTeacherClaims(snapshot));
+        setClaimsReady(true);
+      },
+      (error) => {
+        setClaimsReady(true);
+        toast({
+          title: "Unable to load teacher sign-ins",
+          description: `Firestore error (${error.code}). Deploy the updated Firestore rules.`,
+          variant: "destructive",
+        });
+      }
+    );
+  }, [authUser, toast]);
+
+  const handleGoogleSignIn = async () => {
     if (!firebaseAuth) return;
 
     setIsAuthenticating(true);
     const provider = new GoogleAuthProvider();
-    provider.setCustomParameters({ login_hint: ADMIN_EMAIL, prompt: "select_account" });
+    provider.setCustomParameters({ prompt: "select_account" });
     try {
-      const result = await signInWithPopup(firebaseAuth, provider);
-      if (result.user.email?.toLowerCase() !== ADMIN_EMAIL || !result.user.emailVerified) {
-        await signOut(firebaseAuth);
-        toast({
-          title: "Admin access denied",
-          description: "This Google account is not authorized to edit the rules.",
-          variant: "destructive",
-        });
-      }
+      await signInWithPopup(firebaseAuth, provider);
     } catch (error) {
       const code =
         typeof error === "object" && error !== null && "code" in error ? String(error.code) : "unknown";
@@ -177,9 +214,11 @@ const TeacherPortal = () => {
     }
   };
 
-  const handleAdminSignOut = async () => {
+  const handleSignOut = async () => {
     if (firebaseAuth) await signOut(firebaseAuth);
   };
+
+  const adminEmail = authUser?.email?.toLowerCase() === ADMIN_EMAIL ? authUser.email : null;
 
   const startAddingRule = () => {
     if (!adminEmail) return;
@@ -230,6 +269,72 @@ const TeacherPortal = () => {
     () => teachers.filter((teacher) => teacher.hasAssignedTeacher),
     [teachers]
   );
+
+  const userClaim = useMemo(
+    () =>
+      authUser
+        ? claims.find((claim) => claim.email === authUser.email.toLowerCase()) ?? null
+        : null,
+    [authUser, claims]
+  );
+
+  const claimableTeacherNames = useMemo(() => {
+    const claimedKeys = new Set(claims.map((claim) => normalizeTeacherKey(claim.teacherName)));
+    return assignedTeachers
+      .map((teacher) => teacher.name)
+      .filter((name) => !claimedKeys.has(normalizeTeacherKey(name)));
+  }, [assignedTeachers, claims]);
+
+  const suggestedClaimName = useMemo(() => {
+    const firstName = authUser?.displayName?.trim().split(/\s+/)[0]?.toLowerCase();
+    if (!firstName) return "";
+    return (
+      claimableTeacherNames.find((name) => name.trim().split(/\s+/)[0]?.toLowerCase() === firstName) ?? ""
+    );
+  }, [authUser, claimableTeacherNames]);
+
+  const signedInTeacher = useMemo(
+    () =>
+      userClaim
+        ? assignedTeachers.find(
+            (teacher) => normalizeTeacherKey(teacher.name) === normalizeTeacherKey(userClaim.teacherName)
+          ) ?? null
+        : null,
+    [userClaim, assignedTeachers]
+  );
+
+  const handleClaimName = async (teacherName: string) => {
+    if (!firestore || !authUser?.email || !teacherName) return;
+
+    setIsClaiming(true);
+    try {
+      await claimTeacherName(firestore, teacherName, authUser.email);
+      toast({ title: "Profile linked", description: `You're now linked to ${teacherName}.` });
+    } catch {
+      toast({
+        title: "Couldn't link that name",
+        description: "It may have just been claimed. Pick another name or ask the admin for help.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsClaiming(false);
+    }
+  };
+
+  const handleReleaseClaim = async (claim: TeacherClaim) => {
+    if (!firestore || !adminEmail) return;
+
+    try {
+      await releaseTeacherName(firestore, claim.teacherName);
+      toast({ title: "Link removed", description: `${claim.teacherName} can be claimed again.` });
+    } catch {
+      toast({
+        title: "Couldn't remove link",
+        description: "Check your admin access and Firestore rules, then try again.",
+        variant: "destructive",
+      });
+    }
+  };
 
   const availableMonths = useMemo(() => {
     const months = new Set<string>();
@@ -445,7 +550,7 @@ const TeacherPortal = () => {
     }
   };
 
-  if (loading) {
+  if (loading || !authReady) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="text-center">
@@ -453,6 +558,53 @@ const TeacherPortal = () => {
           <p className="text-muted-foreground">Loading teacher data...</p>
         </div>
       </div>
+    );
+  }
+
+  if (isFirebaseConfigured && !authUser) {
+    return <TeacherSignInScreen onSignIn={handleGoogleSignIn} isAuthenticating={isAuthenticating} />;
+  }
+
+  if (isFirebaseConfigured && authUser && !adminEmail) {
+    if (!claimsReady) {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-background">
+          <Loader2 className="h-10 w-10 animate-spin text-primary" />
+        </div>
+      );
+    }
+
+    if (!userClaim) {
+      return (
+        <TeacherClaimScreen
+          email={authUser.email}
+          names={claimableTeacherNames}
+          suggestedName={suggestedClaimName}
+          isClaiming={isClaiming}
+          onClaim={handleClaimName}
+          onSignOut={handleSignOut}
+        />
+      );
+    }
+
+    if (!signedInTeacher) {
+      return (
+        <TeacherNoDataScreen
+          teacherName={userClaim.teacherName}
+          email={authUser.email}
+          onSignOut={handleSignOut}
+        />
+      );
+    }
+
+    return (
+      <TeacherDashboard
+        teacher={signedInTeacher}
+        cohort={assignedTeachers}
+        email={authUser.email}
+        onSignOut={handleSignOut}
+        onBack={() => navigate("/")}
+      />
     );
   }
 
@@ -756,6 +908,34 @@ const TeacherPortal = () => {
           </TabsContent>
 
           <TabsContent value="rules" className="space-y-6">
+            {adminEmail && (
+              <Card className="border-none bg-white/90 shadow-lg">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg font-semibold text-slate-900">Teacher sign-ins</CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Google accounts linked to teacher names. Remove a link to let a teacher claim a different name.
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {claims.length ? (
+                    claims.map((claim) => (
+                      <div
+                        key={claim.email}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm"
+                      >
+                        <span className="font-medium text-slate-800">{claim.teacherName}</span>
+                        <span className="text-muted-foreground">{claim.email}</span>
+                        <Button variant="ghost" size="sm" onClick={() => handleReleaseClaim(claim)}>
+                          Remove
+                        </Button>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No teacher sign-ins yet.</p>
+                  )}
+                </CardContent>
+              </Card>
+            )}
             <Card className="border-none bg-gradient-to-br from-white via-sky-50 to-emerald-50 shadow-lg">
               <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div className="space-y-2">
@@ -771,7 +951,7 @@ const TeacherPortal = () => {
                   ) : adminEmail ? (
                     <>
                       <span className="text-sm text-muted-foreground">Signed in as {adminEmail}</span>
-                      <Button variant="outline" onClick={handleAdminSignOut}>
+                      <Button variant="outline" onClick={handleSignOut}>
                         <LogOut className="mr-2 h-4 w-4" />
                         Sign out
                       </Button>
@@ -781,7 +961,7 @@ const TeacherPortal = () => {
                       </Button>
                     </>
                   ) : (
-                    <Button onClick={handleAdminSignIn} disabled={isAuthenticating}>
+                    <Button onClick={handleGoogleSignIn} disabled={isAuthenticating}>
                       {isAuthenticating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogIn className="mr-2 h-4 w-4" />}
                       Admin login
                     </Button>
