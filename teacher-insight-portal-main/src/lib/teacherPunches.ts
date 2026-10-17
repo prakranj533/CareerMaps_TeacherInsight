@@ -1,4 +1,4 @@
-import { TeacherData } from "@/pages/TeacherPortal";
+import { normalizeTeacherKey } from "@/lib/teacherDirectory";
 
 const SHEET_ID = "18HJF-96eP2fioYvg90guMficXrokek7Zmlchoz_5d_s";
 const GID = "2055020596";
@@ -10,6 +10,11 @@ type ColumnIndices = {
   primaryStudents: number;
   secondaryStudents?: number;
   merged?: number;
+  center?: number;
+  topic?: number;
+  subTopic?: number;
+  week?: number;
+  reportingTeacher?: number;
 };
 
 const COLUMN_ALIASES: Record<keyof ColumnIndices, string[]> = {
@@ -19,6 +24,11 @@ const COLUMN_ALIASES: Record<keyof ColumnIndices, string[]> = {
   primaryStudents: ["numberofstudentsprimarycenter", "students"],
   secondaryStudents: ["numberofstudentsinsecondarycenter", "secondary"],
   merged: ["merged", "mergedwithcenter"],
+  center: ["primaryclassname", "center", "classname"],
+  topic: ["topictaught", "topic"],
+  subTopic: ["subtopiccovered", "subtopic"],
+  week: ["week"],
+  reportingTeacher: ["reportingteacher"],
 };
 
 const REQUIRED_COLUMNS: Array<keyof ColumnIndices> = [
@@ -28,12 +38,15 @@ const REQUIRED_COLUMNS: Array<keyof ColumnIndices> = [
   "primaryStudents",
 ];
 
-type PunchSession = TeacherData["sessions"][number];
-
 export interface TeacherPunchEntry {
   teacher: string;
+  center: string;
   subject: string;
   students: number;
+  topic: string;
+  subTopic: string;
+  week: string;
+  reportingTeacher: string;
   date?: string;
   monthKey?: string;
   merged?: boolean;
@@ -74,8 +87,13 @@ export async function fetchTeacherPunchData(): Promise<TeacherPunchEntry[]> {
 
     entries.push({
       teacher: teacherName,
+      center: getValue(row, columnIndices.center),
       subject,
       students: totalStudents,
+      topic: getValue(row, columnIndices.topic),
+      subTopic: getValue(row, columnIndices.subTopic),
+      week: getValue(row, columnIndices.week),
+      reportingTeacher: getValue(row, columnIndices.reportingTeacher),
       date,
       monthKey,
       merged: mergedFlag,
@@ -83,6 +101,66 @@ export async function fetchTeacherPunchData(): Promise<TeacherPunchEntry[]> {
   }
 
   return entries;
+}
+
+const tokensOf = (name: string) => name.toLowerCase().split(/\s+/).filter(Boolean);
+
+// The punch sheet uses informal names (first names, reversed order, typos)
+// while the audit sheet holds canonical names. Match conservatively and
+// only accept unique candidates.
+export function matchTeacherName(punchName: string, candidates: string[]): string | null {
+  const key = normalizeTeacherKey(punchName);
+  if (!key) return null;
+
+  const exact = candidates.find((name) => normalizeTeacherKey(name) === key);
+  if (exact) return exact;
+
+  const punchTokens = tokensOf(punchName);
+
+  // Shared whole token + any single-letter tokens in the candidate must be
+  // initials of the remaining punch tokens ("Maheshwari Dipti" -> "Dipti M").
+  const tokenMatches = candidates.filter((name) => {
+    const candidateTokens = tokensOf(name);
+    const shared = candidateTokens.filter((token) => punchTokens.includes(token));
+    if (!shared.length) return false;
+    const remainingPunch = punchTokens.filter((token) => !shared.includes(token));
+    return candidateTokens
+      .filter((token) => !shared.includes(token))
+      .every((token) => token.length === 1 && remainingPunch.some((p) => p.startsWith(token)));
+  });
+  if (tokenMatches.length === 1) return tokenMatches[0];
+
+  // First-token match when unambiguous
+  const firstMatches = candidates.filter((name) => tokensOf(name)[0] === punchTokens[0]);
+  if (firstMatches.length === 1) return firstMatches[0];
+
+  // Prefix match on the normalized key (covers spelling drift like
+  // "Yashaswani" vs "Yashashwini" when one prefixes the other).
+  const prefixMatches = candidates.filter((name) => {
+    const candidateKey = normalizeTeacherKey(name);
+    return (
+      key.length >= 6 &&
+      candidateKey.length >= 6 &&
+      (candidateKey.startsWith(key) || key.startsWith(candidateKey))
+    );
+  });
+  if (prefixMatches.length === 1) return prefixMatches[0];
+
+  return null;
+}
+
+export function buildPunchIndex(
+  entries: TeacherPunchEntry[],
+  canonicalNames: string[]
+): Map<string, TeacherPunchEntry[]> {
+  const index = new Map<string, TeacherPunchEntry[]>();
+  entries.forEach((entry) => {
+    const key = matchTeacherName(entry.teacher, canonicalNames) ?? entry.teacher;
+    const list = index.get(key) ?? [];
+    list.push(entry);
+    index.set(key, list);
+  });
+  return index;
 }
 
 function resolveColumnIndices(header: string[]): ColumnIndices {
@@ -95,7 +173,12 @@ function resolveColumnIndices(header: string[]): ColumnIndices {
 
     for (const alias of aliasList) {
       const normalizedAlias = normalizeHeaderName(alias);
-      const index = normalizedHeader.indexOf(normalizedAlias);
+      let index = normalizedHeader.indexOf(normalizedAlias);
+      // Long Google-Form headers (e.g. "Topic Taught: Mention standard...")
+      // are matched by prefix when no exact column exists.
+      if (index === -1) {
+        index = normalizedHeader.findIndex((name) => name.startsWith(normalizedAlias));
+      }
       if (index !== -1) {
         foundIndex = index;
         break;
@@ -206,7 +289,7 @@ function parseCSV(text: string): string[][] {
     if (char === '"') {
       if (inQuotes && nextChar === '"') {
         currentField += '"';
-        i++;
+        i++; // Skip next quote
       } else {
         inQuotes = !inQuotes;
       }
@@ -220,6 +303,7 @@ function parseCSV(text: string): string[][] {
         currentRow = [];
         currentField = "";
       }
+      // Skip \r\n combinations
       if (char === '\r' && nextChar === '\n') {
         i++;
       }

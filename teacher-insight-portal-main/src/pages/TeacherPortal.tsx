@@ -6,6 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { fetchGoogleSheetData } from "@/lib/googleSheets";
+import { buildPunchIndex, fetchTeacherPunchData, type TeacherPunchEntry } from "@/lib/teacherPunches";
 import { TeacherOverview } from "@/components/teacher/TeacherOverview";
 import { TeacherList } from "@/components/teacher/TeacherList";
 import { PerformanceAnalytics } from "@/components/teacher/PerformanceAnalytics";
@@ -28,6 +29,7 @@ import {
   type TeacherClaim,
 } from "@/lib/teacherDirectory";
 import { TeacherDashboard } from "@/components/teacher/TeacherDashboard";
+import { PunchAnalytics } from "@/components/teacher/PunchAnalytics";
 import { TeacherClaimScreen, TeacherNoDataScreen, TeacherPendingScreen, TeacherSignInScreen } from "@/components/teacher/TeacherAccess";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import {
@@ -103,6 +105,7 @@ export interface TeacherData {
 const TeacherPortal = () => {
   // State declarations at the top level
   const [teachers, setTeachers] = useState<TeacherData[]>([]);
+  const [punchEntries, setPunchEntries] = useState<TeacherPunchEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [subjectFilter, setSubjectFilter] = useState("all");
@@ -295,6 +298,11 @@ const TeacherPortal = () => {
       claimableTeacherNames.find((name) => name.trim().split(/\s+/)[0]?.toLowerCase() === firstName) ?? ""
     );
   }, [authUser, claimableTeacherNames]);
+
+  const punchIndex = useMemo(
+    () => buildPunchIndex(punchEntries, assignedTeachers.map((teacher) => teacher.name)),
+    [punchEntries, assignedTeachers]
+  );
 
   const signedInTeacher = useMemo(
     () =>
@@ -557,8 +565,16 @@ const TeacherPortal = () => {
   const loadTeacherData = async () => {
     try {
       setLoading(true);
-      const data = await fetchGoogleSheetData();
+      // Punch data is additive — a failure here shouldn't block the portal.
+      const [data, punches] = await Promise.all([
+        fetchGoogleSheetData(),
+        fetchTeacherPunchData().catch((error) => {
+          console.error("Failed to fetch teacher punch data:", error);
+          return [] as TeacherPunchEntry[];
+        }),
+      ]);
       setTeachers(data);
+      setPunchEntries(punches);
     } catch (error) {
       toast({
         title: "Error loading data",
@@ -635,6 +651,7 @@ const TeacherPortal = () => {
         teacher={signedInTeacher}
         cohort={assignedTeachers}
         rules={teacherRules}
+        punches={punchIndex.get(signedInTeacher.name) ?? []}
         email={authUser.email}
         onSignOut={handleSignOut}
         onBack={() => navigate("/")}
@@ -741,6 +758,7 @@ const TeacherPortal = () => {
             <TabsList className="h-auto flex-wrap bg-muted/60">
               <TabsTrigger value="overview" className="px-4 sm:px-6">Overview</TabsTrigger>
               <TabsTrigger value="workspace" className="px-4 sm:px-6">Workspace</TabsTrigger>
+              <TabsTrigger value="classes" className="px-4 sm:px-6">Classes</TabsTrigger>
               <TabsTrigger value="rankings" className="px-4 sm:px-6">Rankings</TabsTrigger>
               <TabsTrigger value="rules" className="flex items-center gap-2 px-4 sm:px-6">
                 <ClipboardList className="h-4 w-4" />
@@ -939,6 +957,15 @@ const TeacherPortal = () => {
           <TabsContent value="workspace" className="space-y-6">
             {/* Overview Cards */}
             <TeacherOverview teachers={filteredTeachers} totalClasses={totalClasses} />
+          </TabsContent>
+
+          <TabsContent value="classes" className="space-y-6">
+            <PunchAnalytics
+              entries={punchEntries}
+              title="All class records"
+              description="Every class logged on the teacher punch form, grouped per teacher below."
+              breakdown={punchIndex}
+            />
           </TabsContent>
 
           <TabsContent value="rules" className="space-y-6">

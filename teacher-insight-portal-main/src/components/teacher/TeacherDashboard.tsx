@@ -7,11 +7,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid } from "recharts";
 import { ArrowLeft, BookOpen, ClipboardCheck, ClipboardList, LogOut, Trophy, Users } from "lucide-react";
+import type { TeacherPunchEntry } from "@/lib/teacherPunches";
+import { PunchAnalytics } from "@/components/teacher/PunchAnalytics";
 
 interface TeacherDashboardProps {
   teacher: TeacherData;
   cohort: TeacherData[];
   rules: TeacherRule[];
+  punches: TeacherPunchEntry[];
   email: string;
   onSignOut: () => void;
   onBack: () => void;
@@ -32,7 +35,7 @@ const ordinal = (value: number) => {
   }
 };
 
-export const TeacherDashboard = ({ teacher, cohort, rules, email, onSignOut, onBack }: TeacherDashboardProps) => {
+export const TeacherDashboard = ({ teacher, cohort, rules, punches, email, onSignOut, onBack }: TeacherDashboardProps) => {
   const ranking = useMemo(() => {
     const ranked = [...cohort].sort((a, b) => b.avgScore - a.avgScore);
     const rank = ranked.findIndex((entry) => entry.name === teacher.name) + 1;
@@ -231,6 +234,12 @@ export const TeacherDashboard = ({ teacher, cohort, rules, email, onSignOut, onB
             </Table>
           </CardContent>
         </Card>
+
+        <PunchAnalytics
+          entries={punches}
+          title="Your classes"
+          description="Classes you've logged on the punch form — counts, students, centers and topics."
+        />
 
         <Card className="border-none bg-gradient-to-br from-white via-sky-50 to-emerald-50 shadow-lg">
           <CardHeader>
