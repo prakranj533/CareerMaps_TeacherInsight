@@ -12,6 +12,7 @@ import type { TeacherPunchEntry } from "@/lib/teacherPunches";
 import type { TeacherReviewEntry } from "@/lib/teacherReviews";
 import { PunchAnalytics } from "@/components/teacher/PunchAnalytics";
 import { TeacherReviews } from "@/components/teacher/TeacherReviews";
+import { ShgReports } from "@/components/teacher/ShgReports";
 
 interface TeacherDashboardProps {
   teacher: TeacherData;
@@ -19,6 +20,8 @@ interface TeacherDashboardProps {
   rules: TeacherRule[];
   punches: TeacherPunchEntry[];
   reviews: TeacherReviewEntry[];
+  shgPunches: TeacherPunchEntry[];
+  shgReviews: TeacherReviewEntry[];
   email: string;
   onSignOut: () => void;
   onBack: () => void;
@@ -90,7 +93,7 @@ const scopeTeacherToMonth = (teacher: TeacherData, monthKey: string): TeacherDat
   };
 };
 
-export const TeacherDashboard = ({ teacher, cohort, rules, punches, reviews, email, onSignOut, onBack }: TeacherDashboardProps) => {
+export const TeacherDashboard = ({ teacher, cohort, rules, punches, reviews, shgPunches, shgReviews, email, onSignOut, onBack }: TeacherDashboardProps) => {
   const [month, setMonth] = useState("all");
 
   const availableMonths = useMemo(() => {
@@ -343,6 +346,8 @@ export const TeacherDashboard = ({ teacher, cohort, rules, punches, reviews, ema
           description="Field-review notes logged about your classes."
           month={month}
         />
+
+        <ShgReports punches={shgPunches} reviews={shgReviews} month={month} />
 
         <Card className="border-none bg-gradient-to-br from-white via-sky-50 to-emerald-50 shadow-lg">
           <CardHeader>

@@ -6,7 +6,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { fetchGoogleSheetData } from "@/lib/googleSheets";
-import { buildPunchIndex, fetchTeacherPunchData, type TeacherPunchEntry } from "@/lib/teacherPunches";
+import { buildPunchIndex, fetchTeacherPunchData, matchTeacherName, type TeacherPunchEntry } from "@/lib/teacherPunches";
+import { centersMatch } from "@/lib/shgCenters";
 import { buildReviewIndex, buildReviewerIndex, fetchTeacherReviewData, type TeacherReviewEntry } from "@/lib/teacherReviews";
 import { TeacherOverview } from "@/components/teacher/TeacherOverview";
 import { TeacherList } from "@/components/teacher/TeacherList";
@@ -317,6 +318,8 @@ const TeacherPortal = () => {
     [reviewEntries, assignedTeachers]
   );
 
+  const canonicalNames = useMemo(() => assignedTeachers.map((teacher) => teacher.name), [assignedTeachers]);
+
   const signedInTeacher = useMemo(
     () =>
       userClaim?.status === "approved"
@@ -326,6 +329,39 @@ const TeacherPortal = () => {
         : null,
     [userClaim, assignedTeachers]
   );
+
+  // SHGs the signed-in teacher reports on (as punch "reporting teacher" or
+  // field reviewer) — then everything logged at those centers, by anyone.
+  const signedInShgData = useMemo(() => {
+    if (!signedInTeacher) return { punches: [] as TeacherPunchEntry[], reviews: [] as TeacherReviewEntry[] };
+    const myCenters = [
+      ...punchEntries
+        .filter(
+          (entry) =>
+            entry.reportingTeacher &&
+            (matchTeacherName(entry.reportingTeacher, canonicalNames) ?? entry.reportingTeacher) ===
+              signedInTeacher.name
+        )
+        .map((entry) => entry.center),
+      ...reviewEntries
+        .filter(
+          (entry) =>
+            entry.reviewer &&
+            (matchTeacherName(entry.reviewer, canonicalNames) ?? entry.reviewer) === signedInTeacher.name
+        )
+        .map((entry) => entry.shg),
+    ].filter(Boolean);
+    if (!myCenters.length) return { punches: [] as TeacherPunchEntry[], reviews: [] as TeacherReviewEntry[] };
+
+    return {
+      punches: punchEntries.filter(
+        (entry) => entry.center && myCenters.some((center) => centersMatch(center, entry.center))
+      ),
+      reviews: reviewEntries.filter(
+        (entry) => entry.shg && myCenters.some((center) => centersMatch(center, entry.shg))
+      ),
+    };
+  }, [signedInTeacher, punchEntries, reviewEntries, canonicalNames]);
 
   const handleClaimName = async (teacherName: string) => {
     if (!firestore || !authUser?.email || !teacherName) return;
@@ -671,6 +707,8 @@ const TeacherPortal = () => {
         rules={teacherRules}
         punches={punchIndex.get(signedInTeacher.name) ?? []}
         reviews={reviewIndex.get(signedInTeacher.name) ?? []}
+        shgPunches={signedInShgData.punches}
+        shgReviews={signedInShgData.reviews}
         email={authUser.email}
         onSignOut={handleSignOut}
         onBack={() => navigate("/")}
