@@ -302,9 +302,9 @@ export const PunchAnalytics = ({ entries, title, description, breakdown, activit
             <p className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               <ClipboardList className="h-4 w-4" /> All classes ({recentEntries.length})
             </p>
-            <div className="overflow-x-auto rounded-xl border border-white/60">
+            <div className="max-h-[400px] overflow-y-auto overflow-x-auto rounded-xl border border-white/60">
               <Table>
-                <TableHeader>
+                <TableHeader className="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_hsl(var(--border))]">
                   <TableRow>
                     <TableHead>Date</TableHead>
                     <TableHead>Center</TableHead>
