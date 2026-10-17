@@ -162,7 +162,9 @@ export const TeacherDashboard = ({ teacher, cohort, rules, punches, reviews, shg
           : "Focus area — coaching recommended";
 
   const avgStudentsPerClass = useMemo(() => {
-    const scoped = month === "all" ? punches : punches.filter((entry) => entry.monthKey === month);
+    const scoped = (month === "all" ? punches : punches.filter((entry) => entry.monthKey === month)).filter(
+      (entry) => !entry.duplicate
+    );
     if (!scoped.length) return null;
     const total = scoped.reduce((sum, entry) => sum + entry.students, 0);
     return Math.round(total / scoped.length);

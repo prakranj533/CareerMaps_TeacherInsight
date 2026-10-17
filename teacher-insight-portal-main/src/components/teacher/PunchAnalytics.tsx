@@ -67,22 +67,26 @@ export const PunchAnalytics = ({ entries, title, description, breakdown, activit
     [entries, activeMonth]
   );
 
+  // Duplicate punches (same class + date + subject) are shown but never counted.
+  const unique = useMemo(() => filtered.filter((entry) => !entry.duplicate), [filtered]);
+  const duplicateCount = filtered.length - unique.length;
+
   const stats = useMemo(() => {
-    const totalStudents = filtered.reduce((sum, entry) => sum + entry.students, 0);
-    const merged = filtered.filter((entry) => entry.merged).length;
+    const totalStudents = unique.reduce((sum, entry) => sum + entry.students, 0);
+    const merged = unique.filter((entry) => entry.merged).length;
     return {
-      classes: filtered.length,
+      classes: unique.length,
       totalStudents,
-      avgStudents: filtered.length ? Math.round(totalStudents / filtered.length) : 0,
+      avgStudents: unique.length ? Math.round(totalStudents / unique.length) : 0,
       merged,
     };
-  }, [filtered]);
+  }, [unique]);
 
   // Month-on-month view is always unfiltered — it IS the monthly comparison.
   const classesPerMonth = useMemo(() => {
     const counts = new Map<string, number>();
     entries.forEach((entry) => {
-      if (!entry.monthKey) return;
+      if (!entry.monthKey || entry.duplicate) return;
       counts.set(entry.monthKey, (counts.get(entry.monthKey) ?? 0) + 1);
     });
     return Array.from(counts.entries())
@@ -92,17 +96,17 @@ export const PunchAnalytics = ({ entries, title, description, breakdown, activit
 
   const studentTrend = useMemo(
     () =>
-      filtered
+      unique
         .filter((entry) => entry.date)
         .sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""))
         .slice(-30)
         .map((entry) => ({ date: entry.date?.slice(5) ?? "", students: entry.students })),
-    [filtered]
+    [unique]
   );
 
   const topCenters = useMemo(() => {
     const counts = new Map<string, number>();
-    filtered.forEach((entry) => {
+    unique.forEach((entry) => {
       if (!entry.center) return;
       counts.set(entry.center, (counts.get(entry.center) ?? 0) + 1);
     });
@@ -110,15 +114,15 @@ export const PunchAnalytics = ({ entries, title, description, breakdown, activit
       .sort((a, b) => b[1] - a[1])
       .slice(0, 8)
       .map(([name, count]) => ({ name: name.length > 18 ? `${name.slice(0, 18)}…` : name, fullName: name, classes: count }));
-  }, [filtered]);
+  }, [unique]);
 
   const subjectMix = useMemo(() => {
     const counts = new Map<string, number>();
-    filtered.forEach((entry) => {
+    unique.forEach((entry) => {
       counts.set(entry.subject, (counts.get(entry.subject) ?? 0) + 1);
     });
     return Array.from(counts.entries()).map(([name, value]) => ({ name, value }));
-  }, [filtered]);
+  }, [unique]);
 
   const recentEntries = useMemo(
     () =>
@@ -134,13 +138,16 @@ export const PunchAnalytics = ({ entries, title, description, breakdown, activit
     return Array.from(names)
       .map((name) => {
         const punchList = breakdown.get(name) ?? [];
-        const scoped = activeMonth === "all" ? punchList : punchList.filter((entry) => entry.monthKey === activeMonth);
+        const scopedAll = activeMonth === "all" ? punchList : punchList.filter((entry) => entry.monthKey === activeMonth);
+        const scoped = scopedAll.filter((entry) => !entry.duplicate);
+        const duplicates = scopedAll.length - scoped.length;
         const visitList = activity?.get(name) ?? [];
         const visits = activeMonth === "all" ? visitList : visitList.filter((entry) => entry.monthKey === activeMonth);
         const { feedbacks, counsellings, ptms } = countReviewActivities(visits);
         return {
           name,
           classes: scoped.length,
+          duplicates,
           students: scoped.reduce((sum, entry) => sum + entry.students, 0),
           avgStudents: scoped.length ? Math.round(scoped.reduce((sum, entry) => sum + entry.students, 0) / scoped.length) : 0,
           merged: scoped.filter((entry) => entry.merged).length,
@@ -197,11 +204,12 @@ export const PunchAnalytics = ({ entries, title, description, breakdown, activit
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <StatChip label="Classes logged" value={stats.classes.toLocaleString()} />
           <StatChip label="Students reached" value={stats.totalStudents.toLocaleString()} />
           <StatChip label="Avg students / class" value={String(stats.avgStudents)} />
           <StatChip label="Merged classes" value={String(stats.merged)} />
+          <StatChip label="Duplicates caught" value={String(duplicateCount)} />
         </div>
 
         <div className="grid gap-6 lg:grid-cols-2">
@@ -306,8 +314,18 @@ export const PunchAnalytics = ({ entries, title, description, breakdown, activit
                 </TableHeader>
                 <TableBody>
                   {recentEntries.map((entry, index) => (
-                    <TableRow key={`${entry.date}-${entry.center}-${index}`}>
-                      <TableCell>{entry.date ?? "—"}</TableCell>
+                    <TableRow
+                      key={`${entry.date}-${entry.center}-${index}`}
+                      className={entry.duplicate ? "bg-amber-50/70" : undefined}
+                    >
+                      <TableCell>
+                        {entry.date ?? "—"}
+                        {entry.duplicate && (
+                          <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+                            duplicate
+                          </span>
+                        )}
+                      </TableCell>
                       <TableCell className="max-w-[180px] truncate">{entry.center || "—"}</TableCell>
                       <TableCell className="max-w-[200px] truncate" title={entry.topic}>
                         {entry.topic || "—"}
@@ -339,6 +357,7 @@ export const PunchAnalytics = ({ entries, title, description, breakdown, activit
                     <TableHead className="text-right">Students</TableHead>
                     <TableHead className="text-right">Avg / class</TableHead>
                     <TableHead className="text-right">Merged</TableHead>
+                    <TableHead className="text-right">Dupes</TableHead>
                     <TableHead className="text-right">Feedbacks</TableHead>
                     <TableHead className="text-right">Counselling</TableHead>
                     <TableHead className="text-right">PTMs</TableHead>
@@ -354,6 +373,7 @@ export const PunchAnalytics = ({ entries, title, description, breakdown, activit
                       <TableCell className="text-right">{row.students}</TableCell>
                       <TableCell className="text-right font-medium">{row.avgStudents || "—"}</TableCell>
                       <TableCell className="text-right">{row.merged}</TableCell>
+                      <TableCell className="text-right">{row.duplicates || "—"}</TableCell>
                       <TableCell className="text-right">{row.feedbacks}</TableCell>
                       <TableCell className="text-right">{row.counsellings}</TableCell>
                       <TableCell className="text-right">{row.ptms}</TableCell>
@@ -372,6 +392,7 @@ export const PunchAnalytics = ({ entries, title, description, breakdown, activit
                       })()}
                     </TableCell>
                     <TableCell className="text-right">{teacherRows.reduce((s, r) => s + r.merged, 0)}</TableCell>
+                    <TableCell className="text-right">{teacherRows.reduce((s, r) => s + r.duplicates, 0)}</TableCell>
                     <TableCell className="text-right">{teacherRows.reduce((s, r) => s + r.feedbacks, 0)}</TableCell>
                     <TableCell className="text-right">{teacherRows.reduce((s, r) => s + r.counsellings, 0)}</TableCell>
                     <TableCell className="text-right">{teacherRows.reduce((s, r) => s + r.ptms, 0)}</TableCell>

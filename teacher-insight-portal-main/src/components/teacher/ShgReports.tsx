@@ -30,7 +30,10 @@ const StatChip = ({ label, value }: { label: string; value: string }) => (
 
 export const ShgReports = ({ punches, reviews, month = "all" }: ShgReportsProps) => {
   const scopedPunches = useMemo(
-    () => (month === "all" ? punches : punches.filter((entry) => entry.monthKey === month)),
+    () =>
+      (month === "all" ? punches : punches.filter((entry) => entry.monthKey === month)).filter(
+        (entry) => !entry.duplicate
+      ),
     [punches, month]
   );
   const scopedReviews = useMemo(

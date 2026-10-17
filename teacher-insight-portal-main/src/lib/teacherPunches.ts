@@ -1,4 +1,5 @@
 import { normalizeTeacherKey } from "@/lib/teacherDirectory";
+import { centerKey } from "@/lib/shgCenters";
 
 const SHEET_ID = "18HJF-96eP2fioYvg90guMficXrokek7Zmlchoz_5d_s";
 const GID = "2055020596";
@@ -50,6 +51,8 @@ export interface TeacherPunchEntry {
   date?: string;
   monthKey?: string;
   merged?: boolean;
+  /** True when the same center + date + subject was already punched — kept for display but excluded from counts. */
+  duplicate?: boolean;
 }
 
 export async function fetchTeacherPunchData(): Promise<TeacherPunchEntry[]> {
@@ -99,6 +102,19 @@ export async function fetchTeacherPunchData(): Promise<TeacherPunchEntry[]> {
       merged: mergedFlag,
     });
   }
+
+  // A class double-punched (same center + date + subject) counts once.
+  // The first occurrence stays canonical; later ones are flagged.
+  const seen = new Set<string>();
+  entries.forEach((entry) => {
+    if (!entry.date || !entry.center) return;
+    const key = `${centerKey(entry.center)}|${entry.date}|${entry.subject.trim().toLowerCase()}`;
+    if (seen.has(key)) {
+      entry.duplicate = true;
+    } else {
+      seen.add(key);
+    }
+  });
 
   return entries;
 }

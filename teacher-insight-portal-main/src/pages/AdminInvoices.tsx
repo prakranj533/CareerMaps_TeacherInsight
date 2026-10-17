@@ -147,7 +147,7 @@ const AdminInvoices = () => {
     const grouped = new Map<string, InvoiceRow>();
 
     punchEntries.forEach((entry) => {
-      if (entry.monthKey !== selectedMonth) return;
+      if (entry.monthKey !== selectedMonth || entry.duplicate) return;
 
       const teacherName = entry.teacher || "Unassigned";
       const existing = grouped.get(teacherName) ?? {
