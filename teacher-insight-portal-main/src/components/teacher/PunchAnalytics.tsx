@@ -142,6 +142,7 @@ export const PunchAnalytics = ({ entries, title, description, breakdown, activit
           name,
           classes: scoped.length,
           students: scoped.reduce((sum, entry) => sum + entry.students, 0),
+          avgStudents: scoped.length ? Math.round(scoped.reduce((sum, entry) => sum + entry.students, 0) / scoped.length) : 0,
           merged: scoped.filter((entry) => entry.merged).length,
           feedbacks,
           counsellings,
@@ -336,6 +337,7 @@ export const PunchAnalytics = ({ entries, title, description, breakdown, activit
                     <TableHead>Teacher</TableHead>
                     <TableHead className="text-right">Classes</TableHead>
                     <TableHead className="text-right">Students</TableHead>
+                    <TableHead className="text-right">Avg / class</TableHead>
                     <TableHead className="text-right">Merged</TableHead>
                     <TableHead className="text-right">Feedbacks</TableHead>
                     <TableHead className="text-right">Counselling</TableHead>
@@ -350,6 +352,7 @@ export const PunchAnalytics = ({ entries, title, description, breakdown, activit
                       <TableCell className="font-medium">{row.name}</TableCell>
                       <TableCell className="text-right">{row.classes}</TableCell>
                       <TableCell className="text-right">{row.students}</TableCell>
+                      <TableCell className="text-right font-medium">{row.avgStudents || "—"}</TableCell>
                       <TableCell className="text-right">{row.merged}</TableCell>
                       <TableCell className="text-right">{row.feedbacks}</TableCell>
                       <TableCell className="text-right">{row.counsellings}</TableCell>
@@ -362,6 +365,12 @@ export const PunchAnalytics = ({ entries, title, description, breakdown, activit
                     <TableCell>Total</TableCell>
                     <TableCell className="text-right">{teacherRows.reduce((s, r) => s + r.classes, 0)}</TableCell>
                     <TableCell className="text-right">{teacherRows.reduce((s, r) => s + r.students, 0).toLocaleString()}</TableCell>
+                    <TableCell className="text-right">
+                      {(() => {
+                        const totalClasses = teacherRows.reduce((s, r) => s + r.classes, 0);
+                        return totalClasses ? Math.round(teacherRows.reduce((s, r) => s + r.students, 0) / totalClasses) : "—";
+                      })()}
+                    </TableCell>
                     <TableCell className="text-right">{teacherRows.reduce((s, r) => s + r.merged, 0)}</TableCell>
                     <TableCell className="text-right">{teacherRows.reduce((s, r) => s + r.feedbacks, 0)}</TableCell>
                     <TableCell className="text-right">{teacherRows.reduce((s, r) => s + r.counsellings, 0)}</TableCell>

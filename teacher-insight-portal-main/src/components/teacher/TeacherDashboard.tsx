@@ -158,8 +158,16 @@ export const TeacherDashboard = ({ teacher, cohort, rules, punches, reviews, ema
           ? "Room to grow"
           : "Focus area — coaching recommended";
 
+  const avgStudentsPerClass = useMemo(() => {
+    const scoped = month === "all" ? punches : punches.filter((entry) => entry.monthKey === month);
+    if (!scoped.length) return null;
+    const total = scoped.reduce((sum, entry) => sum + entry.students, 0);
+    return Math.round(total / scoped.length);
+  }, [punches, month]);
+
   const metrics = [
     { label: "Classes taught", value: scopedTeacher.classes.toLocaleString() },
+    { label: "Avg students / class", value: avgStudentsPerClass === null ? "—" : String(avgStudentsPerClass) },
     { label: "Sessions audited", value: scopedTeacher.sessions.length.toLocaleString() },
     { label: "Avg lesson score", value: `${scopedTeacher.avgScore}%` },
     { label: "Engagement", value: `${scopedTeacher.avgEngagement}%` },
