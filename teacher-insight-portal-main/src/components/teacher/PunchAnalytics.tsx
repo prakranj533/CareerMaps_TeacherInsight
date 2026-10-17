@@ -31,6 +31,8 @@ interface PunchAnalyticsProps {
   activity?: Map<string, TeacherReviewEntry[]>;
   /** Controlled month filter — when set, the built-in selector is hidden. */
   month?: string;
+  /** Teacher view: list every class in the period. Admin/summary view omits the detail table. */
+  detailed?: boolean;
 }
 
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -46,7 +48,7 @@ const StatChip = ({ label, value }: { label: string; value: string }) => (
   </div>
 );
 
-export const PunchAnalytics = ({ entries, title, description, breakdown, activity, month }: PunchAnalyticsProps) => {
+export const PunchAnalytics = ({ entries, title, description, breakdown, activity, month, detailed }: PunchAnalyticsProps) => {
   // Uncontrolled mode (admin): own selector defaulting to the latest month,
   // matching the invoice flow's month-scoped view.
   const [internalMonth, setInternalMonth] = useState<string | null>(null);
@@ -128,8 +130,8 @@ export const PunchAnalytics = ({ entries, title, description, breakdown, activit
     () =>
       [...filtered]
         .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""))
-        .slice(0, 8),
-    [filtered]
+        .slice(0, detailed ? undefined : 8),
+    [filtered, detailed]
   );
 
   const teacherRows = useMemo(() => {
@@ -295,10 +297,10 @@ export const PunchAnalytics = ({ entries, title, description, breakdown, activit
           )}
         </div>
 
-        {recentEntries.length > 0 && (
+        {detailed && recentEntries.length > 0 && (
           <div>
             <p className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              <ClipboardList className="h-4 w-4" /> Latest classes
+              <ClipboardList className="h-4 w-4" /> All classes ({recentEntries.length})
             </p>
             <div className="overflow-x-auto rounded-xl border border-white/60">
               <Table>

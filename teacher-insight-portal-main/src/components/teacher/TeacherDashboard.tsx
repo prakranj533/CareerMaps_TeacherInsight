@@ -346,6 +346,7 @@ export const TeacherDashboard = ({ teacher, cohort, rules, punches, reviews, shg
           title="Your classes"
           description="Classes you've logged on the punch form — counts, students, centers and topics."
           month={month}
+          detailed
         />
 
         <TeacherReviews
