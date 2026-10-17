@@ -19,6 +19,7 @@ import { GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from
 import { collection, doc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
 import { firebaseAuth, firestore, isFirebaseConfigured } from "@/lib/firebase";
 import {
+  approveTeacherName,
   claimTeacherName,
   normalizeTeacherKey,
   parseTeacherClaims,
@@ -27,7 +28,7 @@ import {
   type TeacherClaim,
 } from "@/lib/teacherDirectory";
 import { TeacherDashboard } from "@/components/teacher/TeacherDashboard";
-import { TeacherClaimScreen, TeacherNoDataScreen, TeacherSignInScreen } from "@/components/teacher/TeacherAccess";
+import { TeacherClaimScreen, TeacherNoDataScreen, TeacherPendingScreen, TeacherSignInScreen } from "@/components/teacher/TeacherAccess";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import {
   LineChart as ReLineChart,
@@ -113,6 +114,7 @@ const TeacherPortal = () => {
   const [claims, setClaims] = useState<TeacherClaim[]>([]);
   const [claimsReady, setClaimsReady] = useState(false);
   const [isClaiming, setIsClaiming] = useState(false);
+  const [isCancellingClaim, setIsCancellingClaim] = useState(false);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [isAddingRule, setIsAddingRule] = useState(false);
@@ -194,6 +196,7 @@ const TeacherPortal = () => {
     try {
       await signInWithPopup(firebaseAuth, provider);
     } catch (error) {
+      console.error("Google sign-in failed:", error);
       const code =
         typeof error === "object" && error !== null && "code" in error ? String(error.code) : "unknown";
       const description =
@@ -295,7 +298,7 @@ const TeacherPortal = () => {
 
   const signedInTeacher = useMemo(
     () =>
-      userClaim
+      userClaim?.status === "approved"
         ? assignedTeachers.find(
             (teacher) => normalizeTeacherKey(teacher.name) === normalizeTeacherKey(userClaim.teacherName)
           ) ?? null
@@ -309,11 +312,11 @@ const TeacherPortal = () => {
     setIsClaiming(true);
     try {
       await claimTeacherName(firestore, teacherName, authUser.email);
-      toast({ title: "Profile linked", description: `You're now linked to ${teacherName}.` });
+      toast({ title: "Request sent", description: `The admin will review your link to ${teacherName}.` });
     } catch {
       toast({
-        title: "Couldn't link that name",
-        description: "It may have just been claimed. Pick another name or ask the admin for help.",
+        title: "Couldn't request that name",
+        description: "It may have just been requested. Pick another name or ask the admin for help.",
         variant: "destructive",
       });
     } finally {
@@ -321,18 +324,36 @@ const TeacherPortal = () => {
     }
   };
 
-  const handleReleaseClaim = async (claim: TeacherClaim) => {
+  const handleApproveClaim = async (claim: TeacherClaim) => {
     if (!firestore || !adminEmail) return;
 
     try {
-      await releaseTeacherName(firestore, claim.teacherName);
-      toast({ title: "Link removed", description: `${claim.teacherName} can be claimed again.` });
+      await approveTeacherName(firestore, claim.teacherName);
+      toast({ title: "Request approved", description: `${claim.email} is now linked to ${claim.teacherName}.` });
     } catch {
       toast({
-        title: "Couldn't remove link",
+        title: "Couldn't approve request",
         description: "Check your admin access and Firestore rules, then try again.",
         variant: "destructive",
       });
+    }
+  };
+
+  const handleReleaseClaim = async (claim: TeacherClaim, options?: { requireAdmin?: boolean }) => {
+    if (!firestore || (options?.requireAdmin !== false && !adminEmail)) return;
+
+    setIsCancellingClaim(true);
+    try {
+      await releaseTeacherName(firestore, claim.teacherName);
+      toast({ title: "Link removed", description: `${claim.teacherName} can be requested again.` });
+    } catch {
+      toast({
+        title: "Couldn't remove link",
+        description: "Check your access and Firestore rules, then try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsCancellingClaim(false);
     }
   };
 
@@ -582,6 +603,18 @@ const TeacherPortal = () => {
           suggestedName={suggestedClaimName}
           isClaiming={isClaiming}
           onClaim={handleClaimName}
+          onSignOut={handleSignOut}
+        />
+      );
+    }
+
+    if (userClaim.status === "pending") {
+      return (
+        <TeacherPendingScreen
+          teacherName={userClaim.teacherName}
+          email={authUser.email}
+          isCancelling={isCancellingClaim}
+          onCancel={() => handleReleaseClaim(userClaim, { requireAdmin: false })}
           onSignOut={handleSignOut}
         />
       );
@@ -913,7 +946,7 @@ const TeacherPortal = () => {
                 <CardHeader className="pb-3">
                   <CardTitle className="text-lg font-semibold text-slate-900">Teacher sign-ins</CardTitle>
                   <p className="text-sm text-muted-foreground">
-                    Google accounts linked to teacher names. Remove a link to let a teacher claim a different name.
+                    Approve requests to link a Google account to a teacher name. Teachers only see their own dashboard once approved.
                   </p>
                 </CardHeader>
                 <CardContent className="space-y-2">
@@ -923,11 +956,25 @@ const TeacherPortal = () => {
                         key={claim.email}
                         className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm"
                       >
-                        <span className="font-medium text-slate-800">{claim.teacherName}</span>
+                        <span className="font-medium text-slate-800">
+                          {claim.teacherName}
+                          {claim.status === "pending" && (
+                            <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                              Pending
+                            </span>
+                          )}
+                        </span>
                         <span className="text-muted-foreground">{claim.email}</span>
-                        <Button variant="ghost" size="sm" onClick={() => handleReleaseClaim(claim)}>
-                          Remove
-                        </Button>
+                        <div className="flex gap-1">
+                          {claim.status === "pending" && (
+                            <Button variant="default" size="sm" onClick={() => handleApproveClaim(claim)}>
+                              Approve
+                            </Button>
+                          )}
+                          <Button variant="ghost" size="sm" onClick={() => handleReleaseClaim(claim)}>
+                            {claim.status === "pending" ? "Reject" : "Remove"}
+                          </Button>
+                        </div>
                       </div>
                     ))
                   ) : (

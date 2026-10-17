@@ -19,15 +19,20 @@ service cloud.firestore {
         && request.auth.token.email_verified == true;
       allow create: if request.auth != null
         && request.auth.token.email_verified == true
-        && request.resource.data.keys().hasOnly(['email', 'teacherName', 'claimedAt'])
-        && request.resource.data.keys().hasAll(['email', 'teacherName', 'claimedAt'])
+        && request.resource.data.keys().hasOnly(['email', 'teacherName', 'claimedAt', 'status'])
+        && request.resource.data.keys().hasAll(['email', 'teacherName', 'claimedAt', 'status'])
         && request.resource.data.email.lower() == request.auth.token.email.lower()
         && request.resource.data.teacherName is string
         && request.resource.data.teacherName.size() <= 100
-        && request.resource.data.claimedAt is timestamp;
-      allow update, delete: if request.auth != null
+        && request.resource.data.claimedAt is timestamp
+        && request.resource.data.status == 'pending';
+      allow update: if request.auth != null
         && request.auth.token.email == 'prakranj@gmail.com'
         && request.auth.token.email_verified == true;
+      allow delete: if request.auth != null
+        && request.auth.token.email_verified == true
+        && (request.auth.token.email == 'prakranj@gmail.com'
+          || request.auth.token.email.lower() == resource.data.email.lower());
     }
 
     match /{document=**} {

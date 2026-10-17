@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { GraduationCap, Loader2, LogIn, LogOut, UserRound, SearchX } from "lucide-react";
+import { GraduationCap, Loader2, LogIn, LogOut, UserRound, SearchX, Hourglass } from "lucide-react";
 
 const ScreenShell = ({ children }: { children: ReactNode }) => (
   <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(15,118,110,0.08),_transparent_55%)] p-4">
@@ -58,7 +58,7 @@ export const TeacherClaimScreen = ({ email, names, suggestedName, isClaiming, on
           </div>
           <CardTitle className="text-2xl font-semibold text-slate-900">Link your profile</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Signed in as <span className="font-medium text-foreground">{email}</span>. Pick your name to see your dashboard — this only needs to be done once.
+            Signed in as <span className="font-medium text-foreground">{email}</span>. Pick your name — the admin approves each request before your dashboard unlocks.
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -78,10 +78,10 @@ export const TeacherClaimScreen = ({ email, names, suggestedName, isClaiming, on
               </Select>
               <Button className="w-full" size="lg" onClick={() => onClaim(selectedName)} disabled={!selectedName || isClaiming}>
                 {isClaiming ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                This is me
+                Request this name
               </Button>
               <p className="text-center text-xs text-muted-foreground">
-                Names already linked to another account are hidden. Pick the wrong name? Ask the admin to reset it.
+                Names already requested or linked are hidden. Once approved, only you can see your data.
               </p>
             </>
           ) : (
@@ -98,6 +98,40 @@ export const TeacherClaimScreen = ({ email, names, suggestedName, isClaiming, on
     </ScreenShell>
   );
 };
+
+interface TeacherPendingScreenProps {
+  teacherName: string;
+  email: string;
+  isCancelling: boolean;
+  onCancel: () => void;
+  onSignOut: () => void;
+}
+
+export const TeacherPendingScreen = ({ teacherName, email, isCancelling, onCancel, onSignOut }: TeacherPendingScreenProps) => (
+  <ScreenShell>
+    <Card className="border-none bg-white/90 shadow-2xl">
+      <CardHeader className="items-center space-y-3 text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
+          <Hourglass className="h-7 w-7" />
+        </div>
+        <CardTitle className="text-2xl font-semibold text-slate-900">Awaiting approval</CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Your request to link <span className="font-medium text-foreground">{teacherName}</span> is pending admin approval. You'll see your dashboard once it's approved.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <Button variant="outline" className="w-full" onClick={onCancel} disabled={isCancelling}>
+          {isCancelling ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+          Cancel request
+        </Button>
+        <Button variant="ghost" className="w-full" onClick={onSignOut}>
+          <LogOut className="mr-2 h-4 w-4" />
+          Sign out ({email})
+        </Button>
+      </CardContent>
+    </Card>
+  </ScreenShell>
+);
 
 interface TeacherNoDataScreenProps {
   teacherName: string;
