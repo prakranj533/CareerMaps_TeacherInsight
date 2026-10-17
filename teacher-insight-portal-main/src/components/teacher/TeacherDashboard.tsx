@@ -1,7 +1,8 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { TeacherData, TeacherRule } from "@/pages/TeacherPortal";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
@@ -35,48 +36,113 @@ const ordinal = (value: number) => {
   }
 };
 
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const monthLabel = (monthKey: string) => {
+  const [year, month] = monthKey.split("-");
+  return `${MONTH_NAMES[Number(month) - 1] ?? month} ${year}`;
+};
+
+// Recomputes per-teacher aggregates when scoping to a single month,
+// mirroring the averages used across the portal.
+const scopeTeacherToMonth = (teacher: TeacherData, monthKey: string): TeacherData => {
+  if (monthKey === "all") return teacher;
+  const sessions = teacher.sessions.filter((session) => session.monthKey === monthKey);
+  if (!sessions.length) {
+    return {
+      ...teacher,
+      classes: 0,
+      avgScore: 0,
+      avgEngagement: 0,
+      avgClassIssues: 0,
+      avgInstructorPerformance: 0,
+      avgContentStructure: 0,
+      avgPlatformUsage: 0,
+      sessions: [],
+    };
+  }
+
+  const totals = sessions.reduce(
+    (acc, session) => ({
+      score: acc.score + (session.score || 0),
+      engagement: acc.engagement + (session.engagement || 0),
+      classIssues: acc.classIssues + (session.classIssues || 0),
+      instructor: acc.instructor + (session.instructorIssues || 0),
+      content: acc.content + (session.contentStructure || 0),
+      platform: acc.platform + (session.platformUsage || 0),
+    }),
+    { score: 0, engagement: 0, classIssues: 0, instructor: 0, content: 0, platform: 0 }
+  );
+
+  const n = sessions.length;
+  return {
+    ...teacher,
+    classes: n,
+    avgScore: Math.round(totals.score / n),
+    avgEngagement: Math.round((totals.engagement / n) * 5),
+    avgClassIssues: Math.round((totals.classIssues / n) * 5),
+    avgInstructorPerformance: Math.round((totals.instructor / n) * 5),
+    avgContentStructure: Math.round((totals.content / n) * 5),
+    avgPlatformUsage: Math.round((totals.platform / n) * 5),
+    sessions,
+  };
+};
+
 export const TeacherDashboard = ({ teacher, cohort, rules, punches, email, onSignOut, onBack }: TeacherDashboardProps) => {
+  const [month, setMonth] = useState("all");
+
+  const availableMonths = useMemo(() => {
+    const set = new Set<string>();
+    teacher.sessions.forEach((session) => session.monthKey && set.add(session.monthKey));
+    punches.forEach((entry) => entry.monthKey && set.add(entry.monthKey));
+    return Array.from(set).sort((a, b) => b.localeCompare(a));
+  }, [teacher, punches]);
+
+  const scopedTeacher = useMemo(() => scopeTeacherToMonth(teacher, month), [teacher, month]);
+  const scopedCohort = useMemo(
+    () => cohort.map((entry) => scopeTeacherToMonth(entry, month)).filter((entry) => month === "all" || entry.sessions.length > 0),
+    [cohort, month]
+  );
   const ranking = useMemo(() => {
-    const ranked = [...cohort].sort((a, b) => b.avgScore - a.avgScore);
-    const rank = ranked.findIndex((entry) => entry.name === teacher.name) + 1;
-    const total = cohort.length;
-    const beaten = cohort.filter((entry) => entry.avgScore < teacher.avgScore).length;
+    const ranked = [...scopedCohort].sort((a, b) => b.avgScore - a.avgScore);
+    const rank = ranked.findIndex((entry) => entry.name === scopedTeacher.name) + 1;
+    const total = scopedCohort.length;
+    const beaten = scopedCohort.filter((entry) => entry.avgScore < scopedTeacher.avgScore).length;
     const percentile = total > 1 ? Math.round((beaten / (total - 1)) * 100) : 100;
     const topPercent = Math.max(1, Math.ceil((rank / Math.max(total, 1)) * 100));
     return { rank, total, percentile, topPercent };
-  }, [cohort, teacher]);
+  }, [scopedCohort, scopedTeacher]);
 
   const subjectRanking = useMemo(() => {
-    const peers = cohort.filter((entry) => entry.subject === teacher.subject);
+    const peers = scopedCohort.filter((entry) => entry.subject === scopedTeacher.subject);
     if (peers.length < 2) return null;
     const ranked = [...peers].sort((a, b) => b.avgScore - a.avgScore);
-    return { rank: ranked.findIndex((entry) => entry.name === teacher.name) + 1, total: peers.length };
-  }, [cohort, teacher]);
+    return { rank: ranked.findIndex((entry) => entry.name === scopedTeacher.name) + 1, total: peers.length };
+  }, [scopedCohort, scopedTeacher]);
 
   const scoreRange = useMemo(() => {
-    const scores = cohort.map((entry) => entry.avgScore);
+    const scores = scopedCohort.map((entry) => entry.avgScore);
     const min = Math.min(...scores);
     const max = Math.max(...scores);
-    const position = max > min ? ((teacher.avgScore - min) / (max - min)) * 100 : 50;
+    const position = max > min ? ((scopedTeacher.avgScore - min) / (max - min)) * 100 : 50;
     return { min, max, position: Math.min(Math.max(position, 0), 100) };
-  }, [cohort, teacher]);
+  }, [scopedCohort, scopedTeacher]);
 
   const trend = useMemo(
     () =>
-      teacher.sessions
+      scopedTeacher.sessions
         .filter((session) => session.date)
         .sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""))
         .slice(-30)
         .map((session) => ({ date: session.date?.slice(5) ?? "", score: session.score })),
-    [teacher]
+    [scopedTeacher]
   );
 
   const recentSessions = useMemo(
     () =>
-      [...teacher.sessions]
+      [...scopedTeacher.sessions]
         .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""))
         .slice(0, 10),
-    [teacher]
+    [scopedTeacher]
   );
 
   const bandLabel =
@@ -89,14 +155,14 @@ export const TeacherDashboard = ({ teacher, cohort, rules, punches, email, onSig
           : "Focus area — coaching recommended";
 
   const metrics = [
-    { label: "Classes taught", value: teacher.classes.toLocaleString() },
-    { label: "Sessions audited", value: teacher.sessions.length.toLocaleString() },
-    { label: "Avg lesson score", value: `${teacher.avgScore}%` },
-    { label: "Engagement", value: `${teacher.avgEngagement}%` },
-    { label: "Teaching quality", value: `${teacher.avgInstructorPerformance}%` },
-    { label: "Content structure", value: `${teacher.avgContentStructure}%` },
-    { label: "Platform usage", value: `${teacher.avgPlatformUsage}%` },
-    { label: "Classroom issues", value: `${teacher.avgClassIssues}%` },
+    { label: "Classes taught", value: scopedTeacher.classes.toLocaleString() },
+    { label: "Sessions audited", value: scopedTeacher.sessions.length.toLocaleString() },
+    { label: "Avg lesson score", value: `${scopedTeacher.avgScore}%` },
+    { label: "Engagement", value: `${scopedTeacher.avgEngagement}%` },
+    { label: "Teaching quality", value: `${scopedTeacher.avgInstructorPerformance}%` },
+    { label: "Content structure", value: `${scopedTeacher.avgContentStructure}%` },
+    { label: "Platform usage", value: `${scopedTeacher.avgPlatformUsage}%` },
+    { label: "Classroom issues", value: `${scopedTeacher.avgClassIssues}%` },
   ];
 
   return (
@@ -114,10 +180,25 @@ export const TeacherDashboard = ({ teacher, cohort, rules, punches, email, onSig
               </p>
             </div>
           </div>
-          <Button variant="outline" size="sm" onClick={onSignOut}>
-            <LogOut className="mr-2 h-4 w-4" />
-            Sign out
-          </Button>
+          <div className="flex items-center gap-2">
+            <Select value={month} onValueChange={setMonth}>
+              <SelectTrigger className="w-36">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All months</SelectItem>
+                {availableMonths.map((key) => (
+                  <SelectItem key={key} value={key}>
+                    {monthLabel(key)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button variant="outline" size="sm" onClick={onSignOut}>
+              <LogOut className="mr-2 h-4 w-4" />
+              Sign out
+            </Button>
+          </div>
         </div>
 
         <Card className="border-none bg-gradient-to-br from-white via-sky-50 to-emerald-50 shadow-2xl">
@@ -127,7 +208,9 @@ export const TeacherDashboard = ({ teacher, cohort, rules, punches, email, onSig
               <span className="text-xs font-semibold uppercase tracking-[0.3em]">Your ranking</span>
             </div>
             <CardTitle className="text-3xl font-semibold text-slate-900">
-              Top {ranking.topPercent}% · {ordinal(ranking.rank)} of {ranking.total} teachers
+              {ranking.rank > 0
+                ? `Top ${ranking.topPercent}% · ${ordinal(ranking.rank)} of ${ranking.total} teachers`
+                : "No audits this month"}
             </CardTitle>
             <p className="text-sm text-muted-foreground">
               Your average score is higher than {ranking.percentile}% of other teachers. {bandLabel}
@@ -145,7 +228,7 @@ export const TeacherDashboard = ({ teacher, cohort, rules, punches, email, onSig
             <div>
               <div className="mb-2 flex items-center justify-between text-xs uppercase tracking-wide text-muted-foreground">
                 <span>Cohort spread ({scoreRange.min}%–{scoreRange.max}%)</span>
-                <span>You · {teacher.avgScore}%</span>
+                <span>You · {scopedTeacher.avgScore}%</span>
               </div>
               <div className="relative h-3 w-full rounded-full bg-gradient-to-r from-rose-200 via-amber-200 to-emerald-300">
                 <div
@@ -239,6 +322,7 @@ export const TeacherDashboard = ({ teacher, cohort, rules, punches, email, onSig
           entries={punches}
           title="Your classes"
           description="Classes you've logged on the punch form — counts, students, centers and topics."
+          month={month}
         />
 
         <Card className="border-none bg-gradient-to-br from-white via-sky-50 to-emerald-50 shadow-lg">

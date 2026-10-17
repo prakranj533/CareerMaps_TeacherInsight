@@ -1,5 +1,6 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import {
@@ -17,16 +18,20 @@ import {
 import { CalendarDays, ClipboardList, Merge, Users } from "lucide-react";
 import type { TeacherPunchEntry } from "@/lib/teacherPunches";
 
+const PAY_PER_CLASS = 300;
+
 interface PunchAnalyticsProps {
   entries: TeacherPunchEntry[];
   title: string;
   description?: string;
-  /** When provided, renders a per-teacher summary table (admin view). */
+  /** When provided, renders a per-teacher summary table with pay (admin view). */
   breakdown?: Map<string, TeacherPunchEntry[]>;
+  /** Controlled month filter — when set, the built-in selector is hidden. */
+  month?: string;
 }
 
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const monthLabel = (monthKey: string) => {
+export const punchMonthLabel = (monthKey: string) => {
   const [year, month] = monthKey.split("-");
   return `${MONTH_NAMES[Number(month) - 1] ?? month} '${year.slice(2)}`;
 };
@@ -38,18 +43,39 @@ const StatChip = ({ label, value }: { label: string; value: string }) => (
   </div>
 );
 
-export const PunchAnalytics = ({ entries, title, description, breakdown }: PunchAnalyticsProps) => {
+export const PunchAnalytics = ({ entries, title, description, breakdown, month }: PunchAnalyticsProps) => {
+  // Uncontrolled mode (admin): own selector defaulting to the latest month,
+  // matching the invoice flow's month-scoped view.
+  const [internalMonth, setInternalMonth] = useState<string | null>(null);
+  const isControlled = month !== undefined;
+
+  const months = useMemo(
+    () =>
+      Array.from(
+        new Set(entries.map((entry) => entry.monthKey).filter((key): key is string => Boolean(key)))
+      ).sort((a, b) => b.localeCompare(a)),
+    [entries]
+  );
+
+  const activeMonth = isControlled ? month : internalMonth ?? months[0] ?? "all";
+
+  const filtered = useMemo(
+    () => (activeMonth === "all" ? entries : entries.filter((entry) => entry.monthKey === activeMonth)),
+    [entries, activeMonth]
+  );
+
   const stats = useMemo(() => {
-    const totalStudents = entries.reduce((sum, entry) => sum + entry.students, 0);
-    const merged = entries.filter((entry) => entry.merged).length;
+    const totalStudents = filtered.reduce((sum, entry) => sum + entry.students, 0);
+    const merged = filtered.filter((entry) => entry.merged).length;
     return {
-      classes: entries.length,
+      classes: filtered.length,
       totalStudents,
-      avgStudents: entries.length ? Math.round(totalStudents / entries.length) : 0,
+      avgStudents: filtered.length ? Math.round(totalStudents / filtered.length) : 0,
       merged,
     };
-  }, [entries]);
+  }, [filtered]);
 
+  // Month-on-month view is always unfiltered — it IS the monthly comparison.
   const classesPerMonth = useMemo(() => {
     const counts = new Map<string, number>();
     entries.forEach((entry) => {
@@ -58,22 +84,22 @@ export const PunchAnalytics = ({ entries, title, description, breakdown }: Punch
     });
     return Array.from(counts.entries())
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([key, count]) => ({ month: monthLabel(key), classes: count }));
-  }, [entries]);
+      .map(([key, count]) => ({ month: punchMonthLabel(key), classes: count, active: key === activeMonth }));
+  }, [entries, activeMonth]);
 
   const studentTrend = useMemo(
     () =>
-      entries
+      filtered
         .filter((entry) => entry.date)
         .sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""))
         .slice(-30)
         .map((entry) => ({ date: entry.date?.slice(5) ?? "", students: entry.students })),
-    [entries]
+    [filtered]
   );
 
   const topCenters = useMemo(() => {
     const counts = new Map<string, number>();
-    entries.forEach((entry) => {
+    filtered.forEach((entry) => {
       if (!entry.center) return;
       counts.set(entry.center, (counts.get(entry.center) ?? 0) + 1);
     });
@@ -81,36 +107,42 @@ export const PunchAnalytics = ({ entries, title, description, breakdown }: Punch
       .sort((a, b) => b[1] - a[1])
       .slice(0, 8)
       .map(([name, count]) => ({ name: name.length > 18 ? `${name.slice(0, 18)}…` : name, fullName: name, classes: count }));
-  }, [entries]);
+  }, [filtered]);
 
   const subjectMix = useMemo(() => {
     const counts = new Map<string, number>();
-    entries.forEach((entry) => {
+    filtered.forEach((entry) => {
       counts.set(entry.subject, (counts.get(entry.subject) ?? 0) + 1);
     });
     return Array.from(counts.entries()).map(([name, value]) => ({ name, value }));
-  }, [entries]);
+  }, [filtered]);
 
   const recentEntries = useMemo(
     () =>
-      [...entries]
+      [...filtered]
         .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""))
         .slice(0, 8),
-    [entries]
+    [filtered]
   );
 
   const teacherRows = useMemo(() => {
     if (!breakdown) return [];
     return Array.from(breakdown.entries())
-      .map(([name, list]) => ({
-        name,
-        classes: list.length,
-        students: list.reduce((sum, entry) => sum + entry.students, 0),
-        merged: list.filter((entry) => entry.merged).length,
-        lastDate: list.reduce((latest, entry) => ((entry.date ?? "") > latest ? entry.date ?? "" : latest), ""),
-      }))
+      .map(([name, list]) => {
+        const scoped = activeMonth === "all" ? list : list.filter((entry) => entry.monthKey === activeMonth);
+        return {
+          name,
+          classes: scoped.length,
+          students: scoped.reduce((sum, entry) => sum + entry.students, 0),
+          merged: scoped.filter((entry) => entry.merged).length,
+          payment: scoped.length * PAY_PER_CLASS,
+          lastDate: scoped.reduce((latest, entry) => ((entry.date ?? "") > latest ? entry.date ?? "" : latest), ""),
+        };
+      })
       .sort((a, b) => b.classes - a.classes);
-  }, [breakdown]);
+  }, [breakdown, activeMonth]);
+
+  const paymentTotal = useMemo(() => teacherRows.reduce((sum, row) => sum + row.payment, 0), [teacherRows]);
 
   if (!entries.length) {
     return (
@@ -126,12 +158,31 @@ export const PunchAnalytics = ({ entries, title, description, breakdown }: Punch
   return (
     <Card className="border-none bg-gradient-to-br from-white via-sky-50 to-emerald-50 shadow-lg">
       <CardHeader>
-        <div className="flex items-center gap-2 text-primary">
-          <CalendarDays className="h-5 w-5" />
-          <span className="text-xs font-semibold uppercase tracking-[0.3em]">Class records</span>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 text-primary">
+              <CalendarDays className="h-5 w-5" />
+              <span className="text-xs font-semibold uppercase tracking-[0.3em]">Class records</span>
+            </div>
+            <CardTitle className="text-xl font-semibold text-slate-900">{title}</CardTitle>
+            {description && <p className="text-sm text-muted-foreground">{description}</p>}
+          </div>
+          {!isControlled && months.length > 0 && (
+            <Select value={activeMonth} onValueChange={setInternalMonth}>
+              <SelectTrigger className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All months</SelectItem>
+                {months.map((key) => (
+                  <SelectItem key={key} value={key}>
+                    {punchMonthLabel(key)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
-        <CardTitle className="text-xl font-semibold text-slate-900">{title}</CardTitle>
-        {description && <p className="text-sm text-muted-foreground">{description}</p>}
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -153,7 +204,11 @@ export const PunchAnalytics = ({ entries, title, description, breakdown }: Punch
                   <XAxis dataKey="month" tickLine={false} axisLine={false} fontSize={12} />
                   <YAxis allowDecimals={false} tickLine={false} axisLine={false} fontSize={12} />
                   <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="classes" fill="var(--color-classes)" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="classes" fill="var(--color-classes)" radius={[6, 6, 0, 0]}>
+                    {classesPerMonth.map((entry) => (
+                      <Cell key={entry.month} fill="var(--color-classes)" opacity={entry.active ? 1 : 0.45} />
+                    ))}
+                  </Bar>
                 </BarChart>
               </ChartContainer>
             </div>
@@ -272,6 +327,7 @@ export const PunchAnalytics = ({ entries, title, description, breakdown }: Punch
                     <TableHead className="text-right">Students</TableHead>
                     <TableHead className="text-right">Merged</TableHead>
                     <TableHead className="text-right">Last class</TableHead>
+                    <TableHead className="text-right">Pay (₹{PAY_PER_CLASS}/class)</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -282,8 +338,17 @@ export const PunchAnalytics = ({ entries, title, description, breakdown }: Punch
                       <TableCell className="text-right">{row.students}</TableCell>
                       <TableCell className="text-right">{row.merged}</TableCell>
                       <TableCell className="text-right">{row.lastDate || "—"}</TableCell>
+                      <TableCell className="text-right font-medium">₹{row.payment.toLocaleString("en-IN")}</TableCell>
                     </TableRow>
                   ))}
+                  <TableRow className="bg-slate-50 font-semibold">
+                    <TableCell>Total</TableCell>
+                    <TableCell className="text-right">{teacherRows.reduce((s, r) => s + r.classes, 0)}</TableCell>
+                    <TableCell className="text-right">{teacherRows.reduce((s, r) => s + r.students, 0).toLocaleString()}</TableCell>
+                    <TableCell className="text-right">{teacherRows.reduce((s, r) => s + r.merged, 0)}</TableCell>
+                    <TableCell />
+                    <TableCell className="text-right">₹{paymentTotal.toLocaleString("en-IN")}</TableCell>
+                  </TableRow>
                 </TableBody>
               </Table>
             </div>
