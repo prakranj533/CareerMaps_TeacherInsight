@@ -22,6 +22,8 @@ interface TeacherDashboardProps {
   reviews: TeacherReviewEntry[];
   shgPunches: TeacherPunchEntry[];
   shgReviews: TeacherReviewEntry[];
+  shgReviewedPunches: TeacherPunchEntry[];
+  shgReviewedReviews: TeacherReviewEntry[];
   email: string;
   onSignOut: () => void;
   onBack: () => void;
@@ -78,7 +80,7 @@ const scopeTeacherToMonth = (teacher: TeacherData, monthKey: string): TeacherDat
   };
 };
 
-export const TeacherDashboard = ({ teacher, cohort, rules, punches, reviews, shgPunches, shgReviews, email, onSignOut, onBack }: TeacherDashboardProps) => {
+export const TeacherDashboard = ({ teacher, cohort, rules, punches, reviews, shgPunches, shgReviews, shgReviewedPunches, shgReviewedReviews, email, onSignOut, onBack }: TeacherDashboardProps) => {
   const [month, setMonth] = useState("all");
 
   const availableMonths = useMemo(() => {
@@ -340,7 +342,13 @@ export const TeacherDashboard = ({ teacher, cohort, rules, punches, reviews, shg
           month={month}
         />
 
-        <ShgReports punches={shgPunches} reviews={shgReviews} month={month} />
+        <ShgReports
+          punches={shgPunches}
+          reviews={shgReviews}
+          reviewedPunches={shgReviewedPunches}
+          reviewedReviews={shgReviewedReviews}
+          month={month}
+        />
 
         <Card className="border-none bg-gradient-to-br from-white via-sky-50 to-emerald-50 shadow-lg">
           <CardHeader>

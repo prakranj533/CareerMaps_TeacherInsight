@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { fetchGoogleSheetData } from "@/lib/googleSheets";
 import { buildPunchIndex, fetchTeacherPunchData, matchTeacherName, type TeacherPunchEntry } from "@/lib/teacherPunches";
 import { centersMatch } from "@/lib/shgCenters";
+import { fetchShgAssignments, shgsForTeacher, type ShgAssignment } from "@/lib/teacherShgs";
 import { buildReviewIndex, buildReviewerIndex, fetchTeacherReviewData, type TeacherReviewEntry } from "@/lib/teacherReviews";
 import { TeacherOverview } from "@/components/teacher/TeacherOverview";
 import { TeacherList } from "@/components/teacher/TeacherList";
@@ -110,6 +111,7 @@ const TeacherPortal = () => {
   const [teachers, setTeachers] = useState<TeacherData[]>([]);
   const [punchEntries, setPunchEntries] = useState<TeacherPunchEntry[]>([]);
   const [reviewEntries, setReviewEntries] = useState<TeacherReviewEntry[]>([]);
+  const [shgAssignments, setShgAssignments] = useState<ShgAssignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [subjectFilter, setSubjectFilter] = useState("all");
@@ -330,46 +332,71 @@ const TeacherPortal = () => {
     [userClaim, assignedTeachers]
   );
 
-  // SHGs a teacher reports on (as punch "reporting teacher" or field
-  // reviewer) — then everything logged at those centers, by anyone.
+  // "Their" SHGs come from the canonical Teacher's SHGs assignment sheet;
+  // when a teacher isn't listed there, fall back to the centers they punch
+  // reports for. Centers they only visited for feedback stay separate.
   const getShgData = useCallback(
     (teacherName: string) => {
-      const myCenters = [
-        ...punchEntries
-          .filter(
-            (entry) =>
-              entry.reportingTeacher &&
-              (matchTeacherName(entry.reportingTeacher, canonicalNames) ?? entry.reportingTeacher) ===
-                teacherName
-          )
-          .map((entry) => entry.center),
-        ...reviewEntries
-          .filter(
-            (entry) =>
-              entry.reviewer &&
-              (matchTeacherName(entry.reviewer, canonicalNames) ?? entry.reviewer) === teacherName
-          )
-          .map((entry) => entry.shg),
-      ].filter(Boolean);
-      if (!myCenters.length) return { punches: [] as TeacherPunchEntry[], reviews: [] as TeacherReviewEntry[] };
+      const empty = {
+        punches: [] as TeacherPunchEntry[],
+        reviews: [] as TeacherReviewEntry[],
+        reviewedPunches: [] as TeacherPunchEntry[],
+        reviewedReviews: [] as TeacherReviewEntry[],
+      };
+      const assigned = shgsForTeacher(shgAssignments, teacherName, canonicalNames);
+      const reportCenters = assigned.length
+        ? assigned
+        : punchEntries
+            .filter(
+              (entry) =>
+                entry.reportingTeacher &&
+                (matchTeacherName(entry.reportingTeacher, canonicalNames) ?? entry.reportingTeacher) ===
+                  teacherName
+            )
+            .map((entry) => entry.center)
+            .filter(Boolean);
+      const reviewCenters = reviewEntries
+        .filter(
+          (entry) =>
+            entry.reviewer &&
+            (matchTeacherName(entry.reviewer, canonicalNames) ?? entry.reviewer) === teacherName
+        )
+        .map((entry) => entry.shg)
+        .filter(Boolean);
+      if (!reportCenters.length && !reviewCenters.length) return empty;
+
+      const feedbackOnlyCenters = reviewCenters.filter(
+        (shg) => !reportCenters.some((center) => centersMatch(center, shg))
+      );
 
       return {
         punches: punchEntries.filter(
-          (entry) => entry.center && myCenters.some((center) => centersMatch(center, entry.center))
+          (entry) => entry.center && reportCenters.some((center) => centersMatch(center, entry.center))
         ),
         reviews: reviewEntries.filter(
-          (entry) => entry.shg && myCenters.some((center) => centersMatch(center, entry.shg))
+          (entry) => entry.shg && reportCenters.some((center) => centersMatch(center, entry.shg))
+        ),
+        reviewedPunches: punchEntries.filter(
+          (entry) => entry.center && feedbackOnlyCenters.some((center) => centersMatch(center, entry.center))
+        ),
+        reviewedReviews: reviewEntries.filter(
+          (entry) => entry.shg && feedbackOnlyCenters.some((center) => centersMatch(center, entry.shg))
         ),
       };
     },
-    [punchEntries, reviewEntries, canonicalNames]
+    [punchEntries, reviewEntries, canonicalNames, shgAssignments]
   );
 
   const signedInShgData = useMemo(
     () =>
       signedInTeacher
         ? getShgData(signedInTeacher.name)
-        : { punches: [] as TeacherPunchEntry[], reviews: [] as TeacherReviewEntry[] },
+        : {
+            punches: [] as TeacherPunchEntry[],
+            reviews: [] as TeacherReviewEntry[],
+            reviewedPunches: [] as TeacherPunchEntry[],
+            reviewedReviews: [] as TeacherReviewEntry[],
+          },
     [signedInTeacher, getShgData]
   );
 
@@ -383,7 +410,12 @@ const TeacherPortal = () => {
     () =>
       previewTeacher
         ? getShgData(previewTeacher.name)
-        : { punches: [] as TeacherPunchEntry[], reviews: [] as TeacherReviewEntry[] },
+        : {
+            punches: [] as TeacherPunchEntry[],
+            reviews: [] as TeacherReviewEntry[],
+            reviewedPunches: [] as TeacherPunchEntry[],
+            reviewedReviews: [] as TeacherReviewEntry[],
+          },
     [previewTeacher, getShgData]
   );
   const previewEmail = useMemo(() => {
@@ -647,7 +679,7 @@ const TeacherPortal = () => {
     try {
       setLoading(true);
       // Punch and review data are additive — failures shouldn't block the portal.
-      const [data, punches, reviews] = await Promise.all([
+      const [data, punches, reviews, assignments] = await Promise.all([
         fetchGoogleSheetData(),
         fetchTeacherPunchData().catch((error) => {
           console.error("Failed to fetch teacher punch data:", error);
@@ -657,10 +689,15 @@ const TeacherPortal = () => {
           console.error("Failed to fetch teacher review data:", error);
           return [] as TeacherReviewEntry[];
         }),
+        fetchShgAssignments().catch((error) => {
+          console.error("Failed to fetch SHG assignments:", error);
+          return [] as ShgAssignment[];
+        }),
       ]);
       setTeachers(data);
       setPunchEntries(punches);
       setReviewEntries(reviews);
+      setShgAssignments(assignments);
     } catch (error) {
       toast({
         title: "Error loading data",
@@ -741,6 +778,8 @@ const TeacherPortal = () => {
         reviews={reviewIndex.get(signedInTeacher.name) ?? []}
         shgPunches={signedInShgData.punches}
         shgReviews={signedInShgData.reviews}
+        shgReviewedPunches={signedInShgData.reviewedPunches}
+        shgReviewedReviews={signedInShgData.reviewedReviews}
         email={authUser.email}
         onSignOut={handleSignOut}
         onBack={() => navigate("/")}
@@ -1103,6 +1142,8 @@ const TeacherPortal = () => {
                 reviews={reviewIndex.get(previewTeacher.name) ?? []}
                 shgPunches={previewShgData.punches}
                 shgReviews={previewShgData.reviews}
+                shgReviewedPunches={previewShgData.reviewedPunches}
+                shgReviewedReviews={previewShgData.reviewedReviews}
                 email={previewEmail}
                 onSignOut={handleSignOut}
                 onBack={() => setPreviewName("")}

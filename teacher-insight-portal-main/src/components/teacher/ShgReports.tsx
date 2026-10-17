@@ -6,10 +6,14 @@ import type { TeacherPunchEntry } from "@/lib/teacherPunches";
 import { countReviewActivities, type TeacherReviewEntry } from "@/lib/teacherReviews";
 
 interface ShgReportsProps {
-  /** All class records at this teacher's SHGs (any reporting teacher). */
+  /** All class records at SHGs this teacher reports punches for (any reporter). */
   punches: TeacherPunchEntry[];
-  /** All field-review visits at this teacher's SHGs. */
+  /** All field-review visits at those same SHGs. */
   reviews: TeacherReviewEntry[];
+  /** Class records at SHGs the teacher only visited for feedback. */
+  reviewedPunches?: TeacherPunchEntry[];
+  /** Field-review visits at those feedback-only SHGs. */
+  reviewedReviews?: TeacherReviewEntry[];
   /** Controlled month filter from the dashboard selector. */
   month?: string;
 }
@@ -28,7 +32,83 @@ const StatChip = ({ label, value }: { label: string; value: string }) => (
   </div>
 );
 
-export const ShgReports = ({ punches, reviews, month = "all" }: ShgReportsProps) => {
+const cluster = (punches: TeacherPunchEntry[], reviews: TeacherReviewEntry[]): ShgBucket[] => {
+  const groups: ShgBucket[] = [];
+  const place = (rawName: string, kind: "punch" | "review", entry: TeacherPunchEntry | TeacherReviewEntry) => {
+    if (!rawName) return;
+    let group = groups.find((g) => g.names.some((name) => centersMatch(name, rawName)));
+    if (!group) {
+      group = { label: centerLabel(rawName), names: [], punches: [], reviews: [] };
+      groups.push(group);
+    }
+    if (!group.names.includes(rawName)) group.names.push(rawName);
+    (kind === "punch" ? group.punches : group.reviews).push(entry as never);
+  };
+  punches.forEach((entry) => place(entry.center, "punch", entry));
+  reviews.forEach((entry) => place(entry.shg, "review", entry));
+  return groups.sort(
+    (a, b) => b.punches.length + b.reviews.length - (a.punches.length + a.reviews.length)
+  );
+};
+
+const BucketCard = ({ bucket }: { bucket: ShgBucket }) => {
+  const students = bucket.punches.reduce((sum, entry) => sum + entry.students, 0);
+  const teachers = new Set(bucket.punches.map((entry) => entry.teacher).filter(Boolean));
+  const { feedbacks, counsellings, ptms } = countReviewActivities(bucket.reviews);
+  const latestReview = [...bucket.reviews].sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""))[0];
+  const latestClass = [...bucket.punches].sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""))[0];
+
+  return (
+    <div className="space-y-3 rounded-2xl border border-white/80 bg-white/80 p-4 text-sm shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="flex items-center gap-1.5 font-semibold text-slate-900">
+          <Building2 className="h-4 w-4 text-primary" />
+          {bucket.label}
+        </span>
+        <span className="text-xs text-muted-foreground">
+          Last activity {latestReview?.date ?? latestClass?.date ?? "—"}
+        </span>
+      </div>
+
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1">
+          <ClipboardList className="h-3.5 w-3.5" />
+          {bucket.punches.length} classes · {students} students
+          {bucket.punches.length ? ` (avg ${Math.round(students / bucket.punches.length)})` : ""}
+        </span>
+        <span className="flex items-center gap-1">
+          <Users className="h-3.5 w-3.5" />
+          {teachers.size} teacher{teachers.size === 1 ? "" : "s"}
+        </span>
+        <span className="flex items-center gap-1">
+          <MessageSquareQuote className="h-3.5 w-3.5" />
+          {feedbacks} feedback · {counsellings} counselling · {ptms} PTM
+        </span>
+      </div>
+
+      {teachers.size > 0 && (
+        <p className="text-xs text-muted-foreground">
+          Teachers: {[...teachers].slice(0, 6).join(", ")}
+          {teachers.size > 6 ? ` +${teachers.size - 6} more` : ""}
+        </p>
+      )}
+
+      {latestReview?.feedback && (
+        <p className="border-l-2 border-primary/30 pl-3 text-xs leading-relaxed text-slate-700">
+          {latestReview.feedback}
+        </p>
+      )}
+    </div>
+  );
+};
+
+export const ShgReports = ({
+  punches,
+  reviews,
+  reviewedPunches = [],
+  reviewedReviews = [],
+  month = "all",
+}: ShgReportsProps) => {
   const scopedPunches = useMemo(
     () =>
       (month === "all" ? punches : punches.filter((entry) => entry.monthKey === month)).filter(
@@ -40,25 +120,23 @@ export const ShgReports = ({ punches, reviews, month = "all" }: ShgReportsProps)
     () => (month === "all" ? reviews : reviews.filter((entry) => entry.monthKey === month)),
     [reviews, month]
   );
+  const scopedReviewedPunches = useMemo(
+    () =>
+      (month === "all" ? reviewedPunches : reviewedPunches.filter((entry) => entry.monthKey === month)).filter(
+        (entry) => !entry.duplicate
+      ),
+    [reviewedPunches, month]
+  );
+  const scopedReviewedReviews = useMemo(
+    () => (month === "all" ? reviewedReviews : reviewedReviews.filter((entry) => entry.monthKey === month)),
+    [reviewedReviews, month]
+  );
 
-  const buckets = useMemo(() => {
-    const groups: ShgBucket[] = [];
-    const place = (rawName: string, kind: "punch" | "review", entry: TeacherPunchEntry | TeacherReviewEntry) => {
-      if (!rawName) return;
-      let group = groups.find((g) => g.names.some((name) => centersMatch(name, rawName)));
-      if (!group) {
-        group = { label: centerLabel(rawName), names: [], punches: [], reviews: [] };
-        groups.push(group);
-      }
-      if (!group.names.includes(rawName)) group.names.push(rawName);
-      (kind === "punch" ? group.punches : group.reviews).push(entry as never);
-    };
-    scopedPunches.forEach((entry) => place(entry.center, "punch", entry));
-    scopedReviews.forEach((entry) => place(entry.shg, "review", entry));
-    return groups.sort(
-      (a, b) => b.punches.length + b.reviews.length - (a.punches.length + a.reviews.length)
-    );
-  }, [scopedPunches, scopedReviews]);
+  const buckets = useMemo(() => cluster(scopedPunches, scopedReviews), [scopedPunches, scopedReviews]);
+  const feedbackBuckets = useMemo(
+    () => cluster(scopedReviewedPunches, scopedReviewedReviews),
+    [scopedReviewedPunches, scopedReviewedReviews]
+  );
 
   const totals = useMemo(() => {
     const students = scopedPunches.reduce((sum, entry) => sum + entry.students, 0);
@@ -74,7 +152,7 @@ export const ShgReports = ({ punches, reviews, month = "all" }: ShgReportsProps)
     };
   }, [buckets, scopedPunches, scopedReviews]);
 
-  if (!punches.length && !reviews.length) return null;
+  if (!punches.length && !reviews.length && !reviewedPunches.length && !reviewedReviews.length) return null;
 
   return (
     <Card className="border-none bg-gradient-to-br from-white via-sky-50 to-emerald-50 shadow-lg">
@@ -97,64 +175,28 @@ export const ShgReports = ({ punches, reviews, month = "all" }: ShgReportsProps)
         </div>
 
         <div className="grid gap-4 lg:grid-cols-2">
-          {buckets.map((bucket) => {
-            const students = bucket.punches.reduce((sum, entry) => sum + entry.students, 0);
-            const teachers = new Set(bucket.punches.map((entry) => entry.teacher).filter(Boolean));
-            const { feedbacks, counsellings, ptms } = countReviewActivities(bucket.reviews);
-            const latestReview = [...bucket.reviews].sort((a, b) =>
-              (b.date ?? "").localeCompare(a.date ?? "")
-            )[0];
-            const latestClass = [...bucket.punches].sort((a, b) =>
-              (b.date ?? "").localeCompare(a.date ?? "")
-            )[0];
-
-            return (
-              <div
-                key={bucket.label}
-                className="space-y-3 rounded-2xl border border-white/80 bg-white/80 p-4 text-sm shadow-sm"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="flex items-center gap-1.5 font-semibold text-slate-900">
-                    <Building2 className="h-4 w-4 text-primary" />
-                    {bucket.label}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    Last activity {latestReview?.date ?? latestClass?.date ?? "—"}
-                  </span>
-                </div>
-
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <ClipboardList className="h-3.5 w-3.5" />
-                    {bucket.punches.length} classes · {students} students
-                    {bucket.punches.length ? ` (avg ${Math.round(students / bucket.punches.length)})` : ""}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Users className="h-3.5 w-3.5" />
-                    {teachers.size} teacher{teachers.size === 1 ? "" : "s"}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <MessageSquareQuote className="h-3.5 w-3.5" />
-                    {feedbacks} feedback · {counsellings} counselling · {ptms} PTM
-                  </span>
-                </div>
-
-                {teachers.size > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    Teachers: {[...teachers].slice(0, 6).join(", ")}
-                    {teachers.size > 6 ? ` +${teachers.size - 6} more` : ""}
-                  </p>
-                )}
-
-                {latestReview?.feedback && (
-                  <p className="border-l-2 border-primary/30 pl-3 text-xs leading-relaxed text-slate-700">
-                    {latestReview.feedback}
-                  </p>
-                )}
-              </div>
-            );
-          })}
+          {buckets.map((bucket) => (
+            <BucketCard key={bucket.label} bucket={bucket} />
+          ))}
         </div>
+
+        {feedbackBuckets.length > 0 && (
+          <div className="space-y-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                SHGs you've reviewed — {feedbackBuckets.length}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Centers where you've logged feedback visits but don't report classes.
+              </p>
+            </div>
+            <div className="grid gap-4 lg:grid-cols-2">
+              {feedbackBuckets.map((bucket) => (
+                <BucketCard key={bucket.label} bucket={bucket} />
+              ))}
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
