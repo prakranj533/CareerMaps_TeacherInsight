@@ -1,16 +1,17 @@
 import { useMemo } from "react";
-import { TeacherData } from "@/pages/TeacherPortal";
+import { TeacherData, TeacherRule } from "@/pages/TeacherPortal";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid } from "recharts";
-import { ArrowLeft, BookOpen, ClipboardCheck, LogOut, Trophy, Users } from "lucide-react";
+import { ArrowLeft, BookOpen, ClipboardCheck, ClipboardList, LogOut, Trophy, Users } from "lucide-react";
 
 interface TeacherDashboardProps {
   teacher: TeacherData;
   cohort: TeacherData[];
+  rules: TeacherRule[];
   email: string;
   onSignOut: () => void;
   onBack: () => void;
@@ -31,7 +32,7 @@ const ordinal = (value: number) => {
   }
 };
 
-export const TeacherDashboard = ({ teacher, cohort, email, onSignOut, onBack }: TeacherDashboardProps) => {
+export const TeacherDashboard = ({ teacher, cohort, rules, email, onSignOut, onBack }: TeacherDashboardProps) => {
   const ranking = useMemo(() => {
     const ranked = [...cohort].sort((a, b) => b.avgScore - a.avgScore);
     const rank = ranked.findIndex((entry) => entry.name === teacher.name) + 1;
@@ -228,6 +229,27 @@ export const TeacherDashboard = ({ teacher, cohort, email, onSignOut, onBack }: 
                 ))}
               </TableBody>
             </Table>
+          </CardContent>
+        </Card>
+
+        <Card className="border-none bg-gradient-to-br from-white via-sky-50 to-emerald-50 shadow-lg">
+          <CardHeader>
+            <div className="flex items-center gap-2 text-primary">
+              <ClipboardList className="h-5 w-5" />
+              <span className="text-xs font-semibold uppercase tracking-[0.3em]">Guidelines</span>
+            </div>
+            <CardTitle className="text-xl font-semibold text-slate-900">Rules Sheet</CardTitle>
+            <p className="text-sm text-muted-foreground">Teacher guidelines set by the admin.</p>
+          </CardHeader>
+          <CardContent className="grid gap-4 md:grid-cols-2">
+            {rules.map((rule, index) => (
+              <section key={rule.id} className="rounded-2xl border border-white/80 bg-white/80 p-5 shadow-sm">
+                <p className="mb-2 text-sm font-semibold uppercase tracking-wide text-primary">
+                  Rule {String(index + 1).padStart(2, "0")}
+                </p>
+                <p className="text-sm leading-relaxed text-slate-800">{rule.text}</p>
+              </section>
+            ))}
           </CardContent>
         </Card>
       </div>

@@ -48,7 +48,7 @@ const TREEMAP_PALETTE = ["#6D28D9", "#0EA5E9", "#22C55E", "#F97316", "#FB7185", 
 const ADMIN_EMAIL = "prakranj@gmail.com";
 const TEACHER_RULES_DOCUMENT = ["settings", "teacherRules"] as const;
 
-interface TeacherRule {
+export interface TeacherRule {
   id: string;
   text: string;
 }
@@ -634,6 +634,7 @@ const TeacherPortal = () => {
       <TeacherDashboard
         teacher={signedInTeacher}
         cohort={assignedTeachers}
+        rules={teacherRules}
         email={authUser.email}
         onSignOut={handleSignOut}
         onBack={() => navigate("/")}
