@@ -27,21 +27,6 @@ interface TeacherDashboardProps {
   onBack: () => void;
 }
 
-const ordinal = (value: number) => {
-  const mod100 = value % 100;
-  if (mod100 >= 11 && mod100 <= 13) return `${value}th`;
-  switch (value % 10) {
-    case 1:
-      return `${value}st`;
-    case 2:
-      return `${value}nd`;
-    case 3:
-      return `${value}rd`;
-    default:
-      return `${value}th`;
-  }
-};
-
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const monthLabel = (monthKey: string) => {
   const [year, month] = monthKey.split("-");
@@ -123,7 +108,8 @@ export const TeacherDashboard = ({ teacher, cohort, rules, punches, reviews, shg
     const peers = scopedCohort.filter((entry) => entry.subject === scopedTeacher.subject);
     if (peers.length < 2) return null;
     const ranked = [...peers].sort((a, b) => b.avgScore - a.avgScore);
-    return { rank: ranked.findIndex((entry) => entry.name === scopedTeacher.name) + 1, total: peers.length };
+    const rank = ranked.findIndex((entry) => entry.name === scopedTeacher.name) + 1;
+    return { topPercent: Math.max(1, Math.ceil((rank / peers.length) * 100)) };
   }, [scopedCohort, scopedTeacher]);
 
   const scoreRange = useMemo(() => {
@@ -231,9 +217,7 @@ export const TeacherDashboard = ({ teacher, cohort, rules, punches, reviews, shg
               <span className="text-xs font-semibold uppercase tracking-[0.3em]">Your ranking</span>
             </div>
             <CardTitle className="text-3xl font-semibold text-slate-900">
-              {ranking.rank > 0
-                ? `Top ${ranking.topPercent}% · ${ordinal(ranking.rank)} of ${ranking.total} teachers`
-                : "No audits this month"}
+              {ranking.rank > 0 ? `Top ${ranking.topPercent}%` : "No audits this month"}
             </CardTitle>
             <p className="text-sm text-muted-foreground">
               Your average score is higher than {ranking.percentile}% of other teachers. {bandLabel}
@@ -265,7 +249,7 @@ export const TeacherDashboard = ({ teacher, cohort, rules, punches, reviews, shg
             {subjectRanking && (
               <div className="flex items-center gap-2 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-slate-700">
                 <Users className="h-4 w-4 text-primary" />
-                Among {teacher.subject} teachers: {ordinal(subjectRanking.rank)} of {subjectRanking.total}
+                Top {subjectRanking.topPercent}% among {teacher.subject} teachers
               </div>
             )}
           </CardContent>
