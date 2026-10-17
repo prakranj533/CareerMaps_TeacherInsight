@@ -103,12 +103,12 @@ export async function fetchTeacherPunchData(): Promise<TeacherPunchEntry[]> {
     });
   }
 
-  // A class double-punched (same center + date + subject) counts once.
-  // The first occurrence stays canonical; later ones are flagged.
+  // A class double-punched (same center + date + subject + students)
+  // counts once. The first occurrence stays canonical; later ones flagged.
   const seen = new Set<string>();
   entries.forEach((entry) => {
     if (!entry.date || !entry.center) return;
-    const key = `${centerKey(entry.center)}|${entry.date}|${entry.subject.trim().toLowerCase()}`;
+    const key = `${centerKey(entry.center)}|${entry.date}|${entry.subject.trim().toLowerCase()}|${entry.students}`;
     if (seen.has(key)) {
       entry.duplicate = true;
     } else {
