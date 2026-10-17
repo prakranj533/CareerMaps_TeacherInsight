@@ -161,17 +161,23 @@ export const TeacherDashboard = ({ teacher, cohort, rules, punches, reviews, shg
           ? "Room to grow"
           : "Focus area — coaching recommended";
 
+  // Classes taught = punch-sheet entries (deduped), not audit sessions.
+  const scopedPunches = useMemo(
+    () =>
+      (month === "all" ? punches : punches.filter((entry) => entry.monthKey === month)).filter(
+        (entry) => !entry.duplicate
+      ),
+    [punches, month]
+  );
+
   const avgStudentsPerClass = useMemo(() => {
-    const scoped = (month === "all" ? punches : punches.filter((entry) => entry.monthKey === month)).filter(
-      (entry) => !entry.duplicate
-    );
-    if (!scoped.length) return null;
-    const total = scoped.reduce((sum, entry) => sum + entry.students, 0);
-    return Math.round(total / scoped.length);
-  }, [punches, month]);
+    if (!scopedPunches.length) return null;
+    const total = scopedPunches.reduce((sum, entry) => sum + entry.students, 0);
+    return Math.round(total / scopedPunches.length);
+  }, [scopedPunches]);
 
   const metrics = [
-    { label: "Classes taught", value: scopedTeacher.classes.toLocaleString() },
+    { label: "Classes taught", value: scopedPunches.length.toLocaleString() },
     { label: "Avg students / class", value: avgStudentsPerClass === null ? "—" : String(avgStudentsPerClass) },
     { label: "Sessions audited", value: scopedTeacher.sessions.length.toLocaleString() },
     { label: "Avg lesson score", value: `${scopedTeacher.avgScore}%` },

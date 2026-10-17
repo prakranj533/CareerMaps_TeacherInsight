@@ -205,7 +205,7 @@ export const PunchAnalytics = ({ entries, title, description, breakdown, activit
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          <StatChip label="Classes logged" value={stats.classes.toLocaleString()} />
+          <StatChip label="Classes taught" value={stats.classes.toLocaleString()} />
           <StatChip label="Students reached" value={stats.totalStudents.toLocaleString()} />
           <StatChip label="Avg students / class" value={String(stats.avgStudents)} />
           <StatChip label="Merged classes" value={String(stats.merged)} />
