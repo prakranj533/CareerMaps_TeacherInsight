@@ -14,6 +14,7 @@ import { PunchAnalytics } from "@/components/teacher/PunchAnalytics";
 import { TeacherReviews } from "@/components/teacher/TeacherReviews";
 import { ShgReports } from "@/components/teacher/ShgReports";
 import { ShgPunchRecords } from "@/components/teacher/ShgPunchRecords";
+import { MonthlyProgress } from "@/components/teacher/MonthlyProgress";
 
 interface TeacherDashboardProps {
   teacher: TeacherData;
@@ -281,6 +282,8 @@ export const TeacherDashboard = ({ teacher, cohort, rules, punches, reviews, shg
             </Card>
           ))}
         </div>
+
+        <MonthlyProgress sessions={teacher.sessions} punches={punches} reviews={reviews} />
 
         {trend.length > 1 && (
           <Card className="border-none bg-white/90 shadow-lg">
