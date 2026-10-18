@@ -96,6 +96,19 @@ export const PunchAnalytics = ({ entries, title, description, breakdown, activit
       .map(([key, count]) => ({ month: punchMonthLabel(key), classes: count, active: key === activeMonth }));
   }, [entries, activeMonth]);
 
+  // Per-day load, scoped to the active month (or the latest 31 days for "all").
+  const classesPerDay = useMemo(() => {
+    const counts = new Map<string, number>();
+    unique.forEach((entry) => {
+      if (!entry.date) return;
+      counts.set(entry.date, (counts.get(entry.date) ?? 0) + 1);
+    });
+    return Array.from(counts.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(-31)
+      .map(([key, count]) => ({ date: key.slice(5), classes: count }));
+  }, [unique]);
+
   const studentTrend = useMemo(
     () =>
       unique
@@ -231,6 +244,23 @@ export const PunchAnalytics = ({ entries, title, description, breakdown, activit
                       <Cell key={entry.month} fill="var(--color-classes)" opacity={entry.active ? 1 : 0.45} />
                     ))}
                   </Bar>
+                </BarChart>
+              </ChartContainer>
+            </div>
+          )}
+
+          {classesPerDay.length > 1 && (
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Classes per day{activeMonth === "all" ? " · last 31 days" : ""}
+              </p>
+              <ChartContainer config={{ classes: { label: "Classes", color: "hsl(var(--chart-4))" } }} className="h-[200px] w-full">
+                <BarChart data={classesPerDay} margin={{ top: 10, bottom: 0, left: 0, right: 10 }}>
+                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                  <XAxis dataKey="date" tickLine={false} axisLine={false} fontSize={11} interval="preserveStartEnd" />
+                  <YAxis allowDecimals={false} tickLine={false} axisLine={false} fontSize={12} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Bar dataKey="classes" fill="var(--color-classes)" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ChartContainer>
             </div>
