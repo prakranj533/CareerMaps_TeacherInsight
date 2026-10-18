@@ -90,6 +90,31 @@ export const centerKey = (raw: string): string => {
   return `${center}|${district}`;
 };
 
+// Audit-sheet SHG names ("SHG TC TIKAMGARH BIRDHA(23:21:02)") carry the same
+// time code the punch sheet prefixes to its class names — the strongest join
+// key, with location-token overlap as fallback.
+const SHG_CODE_RE = /(\d{2}:\d{2}:\d{2})/;
+
+export const shgCode = (raw: string): string | null => raw.match(SHG_CODE_RE)?.[1] ?? null;
+
+// Filler words in audit-sheet names that carry no location information.
+const AUDIT_STOP_TOKENS = new Set([
+  "shg", "tc", "cec", "sr", "jr", "up", "mp", "cg", "bihar", "jharkhand", "center", "centre",
+]);
+
+export const shgAuditNameMatches = (centerRaw: string, auditName: string): boolean => {
+  const centerCode = shgCode(centerRaw);
+  const auditCode = shgCode(auditName);
+  if (centerCode && auditCode) return centerCode === auditCode;
+
+  const auditTokens = tokens(auditName.replace(SHG_CODE_RE, " ")).filter(
+    (token) => !AUDIT_STOP_TOKENS.has(token)
+  );
+  const centerTokens = tokens(centerRaw);
+  if (!auditTokens.length || !centerTokens.length) return false;
+  return auditTokens.every((token) => centerTokens.some((other) => tokenEq(token, other)));
+};
+
 // Human-friendly label: "center · district".
 export const centerLabel = (raw: string): string => {
   if (raw.includes("/")) {

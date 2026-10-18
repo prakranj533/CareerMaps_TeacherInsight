@@ -103,6 +103,7 @@ export interface TeacherData {
     platformUsage: number;
     date?: string;
     monthKey?: string;
+    shgName?: string;
   }>;
 }
 

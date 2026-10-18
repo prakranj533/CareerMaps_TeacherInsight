@@ -13,6 +13,7 @@ import type { TeacherReviewEntry } from "@/lib/teacherReviews";
 import { PunchAnalytics } from "@/components/teacher/PunchAnalytics";
 import { TeacherReviews } from "@/components/teacher/TeacherReviews";
 import { ShgReports } from "@/components/teacher/ShgReports";
+import { ShgPunchRecords } from "@/components/teacher/ShgPunchRecords";
 
 interface TeacherDashboardProps {
   teacher: TeacherData;
@@ -138,6 +139,19 @@ export const TeacherDashboard = ({ teacher, cohort, rules, punches, reviews, shg
         .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""))
         .slice(0, 10),
     [scopedTeacher]
+  );
+
+  // Audit rows tagged with SHG names — powers the per-SHG Quality Avg.
+  const shgAudits = useMemo(
+    () =>
+      cohort.flatMap((member) =>
+        member.sessions.map((session) => ({
+          shgName: session.shgName,
+          score: session.score,
+          monthKey: session.monthKey,
+        }))
+      ),
+    [cohort]
   );
 
   const bandLabel =
@@ -347,6 +361,13 @@ export const TeacherDashboard = ({ teacher, cohort, rules, punches, reviews, shg
           reviews={shgReviews}
           reviewedPunches={shgReviewedPunches}
           reviewedReviews={shgReviewedReviews}
+          month={month}
+        />
+
+        <ShgPunchRecords
+          punches={shgPunches}
+          reviewedPunches={shgReviewedPunches}
+          audits={shgAudits}
           month={month}
         />
 

@@ -11,6 +11,7 @@ type ColumnIndices = {
   primaryStudents: number;
   secondaryStudents?: number;
   merged?: number;
+  mergedWith?: number;
   center?: number;
   topic?: number;
   subTopic?: number;
@@ -24,7 +25,8 @@ const COLUMN_ALIASES: Record<keyof ColumnIndices, string[]> = {
   subject: ["subject"],
   primaryStudents: ["numberofstudentsprimarycenter", "students"],
   secondaryStudents: ["numberofstudentsinsecondarycenter", "secondary"],
-  merged: ["merged", "mergedwithcenter"],
+  merged: ["merged"],
+  mergedWith: ["mergedwithcenter"],
   center: ["primaryclassname", "center", "classname"],
   topic: ["topictaught", "topic"],
   subTopic: ["subtopiccovered", "subtopic"],
@@ -48,9 +50,12 @@ export interface TeacherPunchEntry {
   subTopic: string;
   week: string;
   reportingTeacher: string;
+  /** Raw sheet timestamp ("1/6/2026 8:16:44") — kept for time-of-day display. */
+  timestamp?: string;
   date?: string;
   monthKey?: string;
   merged?: boolean;
+  mergedWith?: string;
   /** True when the same center + date + subject was already punched — kept for display but excluded from counts. */
   duplicate?: boolean;
 }
@@ -97,9 +102,11 @@ export async function fetchTeacherPunchData(): Promise<TeacherPunchEntry[]> {
       subTopic: getValue(row, columnIndices.subTopic),
       week: getValue(row, columnIndices.week),
       reportingTeacher: getValue(row, columnIndices.reportingTeacher),
+      timestamp,
       date,
       monthKey,
       merged: mergedFlag,
+      mergedWith: getValue(row, columnIndices.mergedWith),
     });
   }
 

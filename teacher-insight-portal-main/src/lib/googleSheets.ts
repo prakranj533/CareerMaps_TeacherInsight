@@ -12,6 +12,7 @@ type ColumnIndices = {
   contentStructure: number;
   platformUsage: number;
   sessionDate?: number;
+  shg?: number;
 };
 
 const COLUMN_ALIASES: Record<keyof ColumnIndices, string[]> = {
@@ -24,6 +25,7 @@ const COLUMN_ALIASES: Record<keyof ColumnIndices, string[]> = {
   contentStructure: ["contentstructure20", "contentstructure"],
   platformUsage: ["platformtoolusage20", "platformtoolusage", "platformusage"],
   sessionDate: ["datecreated", "sessiondate", "date", "classdate"],
+  shg: ["shgname", "shg"],
 };
 
 const REQUIRED_COLUMNS: Array<keyof ColumnIndices> = [
@@ -178,6 +180,7 @@ function padNumber(value: string | number): string {
       const contentStructure = parseNumericValue(row, columnIndices.contentStructure);
       const platformUsage = parseNumericValue(row, columnIndices.platformUsage);
       const { date, monthKey } = extractDateMetadata(getValue(row, columnIndices.sessionDate));
+      const shgName = getValue(row, columnIndices.shg);
       
       if (!teacherMap.has(resolvedTeacherName)) {
         teacherMap.set(resolvedTeacherName, {
@@ -206,6 +209,7 @@ function padNumber(value: string | number): string {
         platformUsage,
         date,
         monthKey,
+        shgName: shgName || undefined,
       });
       teacher.totalScore += finalScore;
       teacher.totalEngagement += engagement;
