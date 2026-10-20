@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ClipboardList } from "lucide-react";
-import { centerLabel, centersMatch, shgAuditNameMatches } from "@/lib/shgCenters";
+import { centerLabel, centersMatch, matchCenterName, shgAuditNameMatches } from "@/lib/shgCenters";
 import type { TeacherPunchEntry } from "@/lib/teacherPunches";
 
 export interface ShgAuditScore {
@@ -20,6 +20,8 @@ interface ShgPunchRecordsProps {
   reviewedPunches?: TeacherPunchEntry[];
   /** Audit rows with SHG names — powers the Quality Avg stat. */
   audits?: ShgAuditScore[];
+  /** Canonical SHG names from the "Teacher's SHGs" sheet — grouping and labels follow it. */
+  centers?: string[];
   /** Controlled month filter from the dashboard selector. */
   month?: string;
 }
@@ -27,6 +29,7 @@ interface ShgPunchRecordsProps {
 interface ShgCluster {
   key: string;
   label: string;
+  canonical: string | null;
   names: string[];
   entries: TeacherPunchEntry[];
   reviewedOnly: boolean;
@@ -77,7 +80,7 @@ const StatTile = ({
   </div>
 );
 
-export const ShgPunchRecords = ({ punches, reviewedPunches = [], audits = [], month = "all" }: ShgPunchRecordsProps) => {
+export const ShgPunchRecords = ({ punches, reviewedPunches = [], audits = [], centers = [], month = "all" }: ShgPunchRecordsProps) => {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
   const scopedPunches = useMemo(
@@ -98,11 +101,15 @@ export const ShgPunchRecords = ({ punches, reviewedPunches = [], audits = [], mo
     const place = (entry: TeacherPunchEntry, reviewedOnly: boolean) => {
       const rawName = entry.center;
       if (!rawName) return;
-      let group = groups.find((g) => g.names.some((name) => centersMatch(name, rawName)));
+      const canonicalName = matchCenterName(rawName, centers);
+      let group = canonicalName
+        ? groups.find((g) => g.canonical === canonicalName)
+        : groups.find((g) => !g.canonical && g.names.some((name) => centersMatch(name, rawName)));
       if (!group) {
         group = {
-          key: `shg-${groups.length}`,
-          label: centerLabel(rawName),
+          key: canonicalName ?? `shg-${groups.length}`,
+          canonical: canonicalName,
+          label: centerLabel(canonicalName ?? rawName),
           names: [],
           entries: [],
           reviewedOnly,
@@ -133,11 +140,11 @@ export const ShgPunchRecords = ({ punches, reviewedPunches = [], audits = [], mo
       group.qualityAvg = scores.length
         ? Math.round((scores.reduce((sum, score) => sum + score, 0) / scores.length) * 10) / 10
         : null;
-      if (matched.length) group.label = matched[0];
+      if (matched.length && !group.canonical) group.label = matched[0];
     });
 
     return groups.sort((a, b) => b.lastClassAt - a.lastClassAt);
-  }, [scopedPunches, scopedReviewed, scopedAudits]);
+  }, [scopedPunches, scopedReviewed, scopedAudits, centers]);
 
   const active = clusters.find((cluster) => cluster.key === selectedKey) ?? clusters[0] ?? null;
 

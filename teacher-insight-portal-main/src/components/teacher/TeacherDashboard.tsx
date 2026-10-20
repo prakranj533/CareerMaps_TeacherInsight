@@ -26,6 +26,8 @@ interface TeacherDashboardProps {
   shgReviews: TeacherReviewEntry[];
   shgReviewedPunches: TeacherPunchEntry[];
   shgReviewedReviews: TeacherReviewEntry[];
+  /** Canonical SHG names from the "Teacher's SHGs" sheet — drives labels and grouping. */
+  shgCenters: string[];
   email: string;
   onSignOut: () => void;
   onBack: () => void;
@@ -82,7 +84,7 @@ const scopeTeacherToMonth = (teacher: TeacherData, monthKey: string): TeacherDat
   };
 };
 
-export const TeacherDashboard = ({ teacher, cohort, rules, punches, reviews, shgPunches, shgReviews, shgReviewedPunches, shgReviewedReviews, email, onSignOut, onBack }: TeacherDashboardProps) => {
+export const TeacherDashboard = ({ teacher, cohort, rules, punches, reviews, shgPunches, shgReviews, shgReviewedPunches, shgReviewedReviews, shgCenters, email, onSignOut, onBack }: TeacherDashboardProps) => {
   const [month, setMonth] = useState("all");
 
   const availableMonths = useMemo(() => {
@@ -364,6 +366,7 @@ export const TeacherDashboard = ({ teacher, cohort, rules, punches, reviews, shg
           reviews={shgReviews}
           reviewedPunches={shgReviewedPunches}
           reviewedReviews={shgReviewedReviews}
+          centers={shgCenters}
           month={month}
         />
 
@@ -371,6 +374,7 @@ export const TeacherDashboard = ({ teacher, cohort, rules, punches, reviews, shg
           punches={shgPunches}
           reviewedPunches={shgReviewedPunches}
           audits={shgAudits}
+          centers={shgCenters}
           month={month}
         />
 

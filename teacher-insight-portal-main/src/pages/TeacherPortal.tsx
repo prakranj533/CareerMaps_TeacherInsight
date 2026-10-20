@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { fetchGoogleSheetData } from "@/lib/googleSheets";
 import { buildPunchIndex, fetchTeacherPunchData, matchTeacherName, type TeacherPunchEntry } from "@/lib/teacherPunches";
-import { centersMatch } from "@/lib/shgCenters";
+import { centersMatch, matchCenterName } from "@/lib/shgCenters";
 import { fetchShgAssignments, shgsForTeacher, type ShgAssignment } from "@/lib/teacherShgs";
 import { buildReviewIndex, buildReviewerIndex, fetchTeacherReviewData, type TeacherReviewEntry } from "@/lib/teacherReviews";
 import { TeacherOverview } from "@/components/teacher/TeacherOverview";
@@ -334,9 +334,9 @@ const TeacherPortal = () => {
     [userClaim, assignedTeachers]
   );
 
-  // "Their" SHGs come from the canonical Teacher's SHGs assignment sheet;
-  // when a teacher isn't listed there, fall back to the centers they punch
-  // reports for. Centers they only visited for feedback stay separate.
+  // "Their" SHGs come only from the canonical "Teacher's SHGs" tab — the
+  // "Reporting teacher" column decides which centers belong to a teacher.
+  // Centers they only visited for feedback stay separate.
   const getShgData = useCallback(
     (teacherName: string) => {
       const empty = {
@@ -344,19 +344,9 @@ const TeacherPortal = () => {
         reviews: [] as TeacherReviewEntry[],
         reviewedPunches: [] as TeacherPunchEntry[],
         reviewedReviews: [] as TeacherReviewEntry[],
+        reportCenters: [] as string[],
       };
-      const assigned = shgsForTeacher(shgAssignments, teacherName, canonicalNames);
-      const reportCenters = assigned.length
-        ? assigned
-        : punchEntries
-            .filter(
-              (entry) =>
-                entry.reportingTeacher &&
-                (matchTeacherName(entry.reportingTeacher, canonicalNames) ?? entry.reportingTeacher) ===
-                  teacherName
-            )
-            .map((entry) => entry.center)
-            .filter(Boolean);
+      const reportCenters = shgsForTeacher(shgAssignments, teacherName, canonicalNames);
       const reviewCenters = reviewEntries
         .filter(
           (entry) =>
@@ -368,15 +358,15 @@ const TeacherPortal = () => {
       if (!reportCenters.length && !reviewCenters.length) return empty;
 
       const feedbackOnlyCenters = reviewCenters.filter(
-        (shg) => !reportCenters.some((center) => centersMatch(center, shg))
+        (shg) => !matchCenterName(shg, reportCenters)
       );
 
       return {
         punches: punchEntries.filter(
-          (entry) => entry.center && reportCenters.some((center) => centersMatch(center, entry.center))
+          (entry) => entry.center && matchCenterName(entry.center, reportCenters)
         ),
         reviews: reviewEntries.filter(
-          (entry) => entry.shg && reportCenters.some((center) => centersMatch(center, entry.shg))
+          (entry) => entry.shg && matchCenterName(entry.shg, reportCenters)
         ),
         reviewedPunches: punchEntries.filter(
           (entry) => entry.center && feedbackOnlyCenters.some((center) => centersMatch(center, entry.center))
@@ -384,6 +374,7 @@ const TeacherPortal = () => {
         reviewedReviews: reviewEntries.filter(
           (entry) => entry.shg && feedbackOnlyCenters.some((center) => centersMatch(center, entry.shg))
         ),
+        reportCenters,
       };
     },
     [punchEntries, reviewEntries, canonicalNames, shgAssignments]
@@ -398,6 +389,7 @@ const TeacherPortal = () => {
             reviews: [] as TeacherReviewEntry[],
             reviewedPunches: [] as TeacherPunchEntry[],
             reviewedReviews: [] as TeacherReviewEntry[],
+            reportCenters: [] as string[],
           },
     [signedInTeacher, getShgData]
   );
@@ -417,6 +409,7 @@ const TeacherPortal = () => {
             reviews: [] as TeacherReviewEntry[],
             reviewedPunches: [] as TeacherPunchEntry[],
             reviewedReviews: [] as TeacherReviewEntry[],
+            reportCenters: [] as string[],
           },
     [previewTeacher, getShgData]
   );
@@ -782,6 +775,7 @@ const TeacherPortal = () => {
         shgReviews={signedInShgData.reviews}
         shgReviewedPunches={signedInShgData.reviewedPunches}
         shgReviewedReviews={signedInShgData.reviewedReviews}
+        shgCenters={signedInShgData.reportCenters}
         email={authUser.email}
         onSignOut={handleSignOut}
         onBack={() => navigate("/")}
@@ -1146,6 +1140,7 @@ const TeacherPortal = () => {
                 shgReviews={previewShgData.reviews}
                 shgReviewedPunches={previewShgData.reviewedPunches}
                 shgReviewedReviews={previewShgData.reviewedReviews}
+                shgCenters={previewShgData.reportCenters}
                 email={previewEmail}
                 onSignOut={handleSignOut}
                 onBack={() => setPreviewName("")}

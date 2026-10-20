@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Building2, ClipboardList, MessageSquareQuote, Users } from "lucide-react";
-import { centerLabel, centersMatch } from "@/lib/shgCenters";
+import { centerLabel, centersMatch, matchCenterName } from "@/lib/shgCenters";
 import type { TeacherPunchEntry } from "@/lib/teacherPunches";
 import { countReviewActivities, type TeacherReviewEntry } from "@/lib/teacherReviews";
 
@@ -14,12 +14,15 @@ interface ShgReportsProps {
   reviewedPunches?: TeacherPunchEntry[];
   /** Field-review visits at those feedback-only SHGs. */
   reviewedReviews?: TeacherReviewEntry[];
+  /** Canonical SHG names from the "Teacher's SHGs" sheet — grouping and labels follow it. */
+  centers?: string[];
   /** Controlled month filter from the dashboard selector. */
   month?: string;
 }
 
 interface ShgBucket {
   label: string;
+  canonical?: string;
   names: string[];
   punches: TeacherPunchEntry[];
   reviews: TeacherReviewEntry[];
@@ -32,13 +35,22 @@ const StatChip = ({ label, value }: { label: string; value: string }) => (
   </div>
 );
 
-const cluster = (punches: TeacherPunchEntry[], reviews: TeacherReviewEntry[]): ShgBucket[] => {
+const cluster = (punches: TeacherPunchEntry[], reviews: TeacherReviewEntry[], canonical: string[] = []): ShgBucket[] => {
   const groups: ShgBucket[] = [];
   const place = (rawName: string, kind: "punch" | "review", entry: TeacherPunchEntry | TeacherReviewEntry) => {
     if (!rawName) return;
-    let group = groups.find((g) => g.names.some((name) => centersMatch(name, rawName)));
+    const canonicalName = matchCenterName(rawName, canonical);
+    let group = canonicalName
+      ? groups.find((g) => g.canonical === canonicalName)
+      : groups.find((g) => !g.canonical && g.names.some((name) => centersMatch(name, rawName)));
     if (!group) {
-      group = { label: centerLabel(rawName), names: [], punches: [], reviews: [] };
+      group = {
+        label: centerLabel(canonicalName ?? rawName),
+        canonical: canonicalName ?? undefined,
+        names: [],
+        punches: [],
+        reviews: [],
+      };
       groups.push(group);
     }
     if (!group.names.includes(rawName)) group.names.push(rawName);
@@ -107,6 +119,7 @@ export const ShgReports = ({
   reviews,
   reviewedPunches = [],
   reviewedReviews = [],
+  centers = [],
   month = "all",
 }: ShgReportsProps) => {
   const scopedPunches = useMemo(
@@ -132,10 +145,13 @@ export const ShgReports = ({
     [reviewedReviews, month]
   );
 
-  const buckets = useMemo(() => cluster(scopedPunches, scopedReviews), [scopedPunches, scopedReviews]);
+  const buckets = useMemo(
+    () => cluster(scopedPunches, scopedReviews, centers),
+    [scopedPunches, scopedReviews, centers]
+  );
   const feedbackBuckets = useMemo(
-    () => cluster(scopedReviewedPunches, scopedReviewedReviews),
-    [scopedReviewedPunches, scopedReviewedReviews]
+    () => cluster(scopedReviewedPunches, scopedReviewedReviews, centers),
+    [scopedReviewedPunches, scopedReviewedReviews, centers]
   );
 
   const totals = useMemo(() => {

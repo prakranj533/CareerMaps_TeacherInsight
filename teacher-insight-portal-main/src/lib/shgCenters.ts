@@ -115,6 +115,27 @@ export const shgAuditNameMatches = (centerRaw: string, auditName: string): boole
   return auditTokens.every((token) => centerTokens.some((other) => tokenEq(token, other)));
 };
 
+// Resolve an arbitrary center spelling to a canonical SHG name from the
+// "Teacher's SHGs" sheet. Fuzzy match first; then a distinctive-token
+// fallback — a token found in exactly one canonical center identifies it
+// even when the rest of the name disagrees ("Naigadhi SIWAN" → the SATNA
+// Naigadhi SHG). Ambiguous tokens never map.
+export const matchCenterName = (raw: string, canonical: string[]): string | null => {
+  if (!raw || !canonical.length) return null;
+  const direct = canonical.find((name) => centersMatch(name, raw));
+  if (direct) return direct;
+  const hits = new Set<string>();
+  tokens(raw)
+    .filter((token) => token.length >= 5)
+    .forEach((token) => {
+      const matched = canonical.filter((name) =>
+        tokens(name).some((other) => tokenEq(token, other))
+      );
+      if (matched.length === 1) hits.add(matched[0]);
+    });
+  return hits.size === 1 ? [...hits][0] : null;
+};
+
 // Human-friendly label: "center · district".
 export const centerLabel = (raw: string): string => {
   if (raw.includes("/")) {
