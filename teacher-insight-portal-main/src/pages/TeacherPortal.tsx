@@ -51,7 +51,7 @@ import {
 } from "recharts";
 
 const TREEMAP_PALETTE = ["#6D28D9", "#0EA5E9", "#22C55E", "#F97316", "#FB7185", "#14B8A6", "#7C3AED", "#FACC15"];
-const ADMIN_EMAIL = "prakranj@gmail.com";
+const ADMIN_EMAILS = ["prakranj@gmail.com", "gloryjain9@gmail.com"];
 const TEACHER_RULES_DOCUMENT = ["settings", "teacherRules"] as const;
 
 export interface TeacherRule {
@@ -231,7 +231,8 @@ const TeacherPortal = () => {
     if (firebaseAuth) await signOut(firebaseAuth);
   };
 
-  const adminEmail = authUser?.email?.toLowerCase() === ADMIN_EMAIL ? authUser.email : null;
+  const adminEmail =
+    authUser?.email && ADMIN_EMAILS.includes(authUser.email.toLowerCase()) ? authUser.email : null;
 
   const startAddingRule = () => {
     if (!adminEmail) return;
