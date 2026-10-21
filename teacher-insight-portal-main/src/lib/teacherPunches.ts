@@ -48,6 +48,7 @@ export interface TeacherPunchEntry {
   students: number;
   topic: string;
   subTopic: string;
+  material?: string;
   week: string;
   reportingTeacher: string;
   /** Raw sheet timestamp ("1/6/2026 8:16:44") — kept for time-of-day display. */
@@ -77,6 +78,9 @@ export async function fetchTeacherPunchData(): Promise<TeacherPunchEntry[]> {
 
   const header = rows[0].map((column) => column?.trim() ?? "");
   const columnIndices = resolveColumnIndices(header);
+  const materialColumns = header.flatMap((name, index) =>
+    /^(materiallink|fileupload)/.test(normalizeHeaderName(name)) ? [index] : []
+  );
   const entries: TeacherPunchEntry[] = [];
 
   for (let i = 1; i < rows.length; i++) {
@@ -99,6 +103,7 @@ export async function fetchTeacherPunchData(): Promise<TeacherPunchEntry[]> {
       subject,
       students: totalStudents,
       topic: getValue(row, columnIndices.topic),
+      material: [...new Set(materialColumns.map((index) => getValue(row, index)).filter(Boolean))].join("\n"),
       subTopic: getValue(row, columnIndices.subTopic),
       week: getValue(row, columnIndices.week),
       reportingTeacher: getValue(row, columnIndices.reportingTeacher),

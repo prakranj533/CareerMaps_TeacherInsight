@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { LinkedText } from "@/components/teacher/LinkedText";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -388,6 +389,7 @@ export const PunchAnalytics = ({ entries, title, description, breakdown, activit
                     <TableHead>Date</TableHead>
                     <TableHead>Center</TableHead>
                     <TableHead>Topic</TableHead>
+                    <TableHead>Material</TableHead>
                     <TableHead>Week</TableHead>
                     <TableHead className="text-right">Students</TableHead>
                     <TableHead className="text-center">Merged</TableHead>
@@ -411,6 +413,7 @@ export const PunchAnalytics = ({ entries, title, description, breakdown, activit
                       <TableCell className="max-w-[200px] truncate" title={entry.topic}>
                         {entry.topic || "—"}
                       </TableCell>
+                      <TableCell className="min-w-[180px] max-w-[300px] whitespace-pre-wrap break-words"><LinkedText text={entry.material} /></TableCell>
                       <TableCell className="whitespace-nowrap text-muted-foreground">{entry.week || "—"}</TableCell>
                       <TableCell className="text-right">{entry.students}</TableCell>
                       <TableCell className="text-center">

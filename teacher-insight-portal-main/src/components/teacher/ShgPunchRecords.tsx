@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { LinkedText } from "@/components/teacher/LinkedText";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -250,6 +251,7 @@ export const ShgPunchRecords = ({ punches, reviewedPunches = [], audits = [], ce
                     <TableHead>Date</TableHead>
                     <TableHead>Subject</TableHead>
                     <TableHead>Topic</TableHead>
+                    <TableHead>Material</TableHead>
                     <TableHead>Sub-topic</TableHead>
                     <TableHead className="text-right">Students</TableHead>
                     <TableHead>Merged</TableHead>
@@ -276,6 +278,7 @@ export const ShgPunchRecords = ({ punches, reviewedPunches = [], audits = [], ce
                       <TableCell className="max-w-[220px] truncate" title={entry.topic}>
                         {entry.topic || "—"}
                       </TableCell>
+                      <TableCell className="min-w-[180px] max-w-[300px] whitespace-pre-wrap break-words"><LinkedText text={entry.material} /></TableCell>
                       <TableCell className="max-w-[220px] truncate text-slate-600" title={entry.subTopic}>
                         {entry.subTopic || "—"}
                       </TableCell>

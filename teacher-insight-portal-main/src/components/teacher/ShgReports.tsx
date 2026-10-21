@@ -145,10 +145,16 @@ export const ShgReports = ({
     [reviewedReviews, month]
   );
 
-  const buckets = useMemo(
-    () => cluster(scopedPunches, scopedReviews, centers),
-    [scopedPunches, scopedReviews, centers]
-  );
+  const buckets = useMemo(() => {
+    const groups = cluster(scopedPunches, scopedReviews, centers);
+    for (const canonical of new Set(centers)) {
+      if (!groups.some((group) => group.canonical === canonical)) {
+        groups.push({ label: centerLabel(canonical), canonical, names: [canonical], punches: [], reviews: [] });
+      }
+    }
+    return groups;
+  }, [scopedPunches, scopedReviews, centers]);
+  const zeroClassBuckets = buckets.filter((bucket) => bucket.canonical && !bucket.punches.length);
   const feedbackBuckets = useMemo(
     () => cluster(scopedReviewedPunches, scopedReviewedReviews, centers),
     [scopedReviewedPunches, scopedReviewedReviews, centers]
@@ -168,7 +174,7 @@ export const ShgReports = ({
     };
   }, [buckets, scopedPunches, scopedReviews]);
 
-  if (!punches.length && !reviews.length && !reviewedPunches.length && !reviewedReviews.length) return null;
+  if (!centers.length && !punches.length && !reviews.length && !reviewedPunches.length && !reviewedReviews.length) return null;
 
   return (
     <Card className="border-none bg-gradient-to-br from-white via-sky-50 to-emerald-50 shadow-lg">
@@ -189,6 +195,23 @@ export const ShgReports = ({
           <StatChip label="Avg students / class" value={String(totals.avgStudents)} />
           <StatChip label="Review visits" value={String(totals.feedbacks + totals.counsellings)} />
         </div>
+
+        {zeroClassBuckets.length > 0 && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4">
+            <h3 className="font-semibold text-slate-900">Your SHGs with zero classes ({zeroClassBuckets.length})</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Assigned SHGs with no logged classes {month === "all" ? "across all months" : `in ${month}`}.
+            </p>
+            <ul className="mt-3 space-y-2 text-sm">
+              {zeroClassBuckets.map((bucket) => (
+                <li key={bucket.canonical} className="flex items-center justify-between gap-3">
+                  <span>{bucket.canonical}</span>
+                  <span className="whitespace-nowrap font-semibold">0 classes</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         <div className="grid gap-4 lg:grid-cols-2">
           {buckets.map((bucket) => (
