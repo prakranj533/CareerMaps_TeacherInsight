@@ -1089,6 +1089,7 @@ const TeacherPortal = () => {
             <PunchAnalytics
               entries={punchEntries}
               title="All class records"
+              shgAssignments={shgAssignments}
               description="Every class logged on the teacher punch form, grouped per teacher below."
               breakdown={punchIndex}
               activity={reviewerIndex}

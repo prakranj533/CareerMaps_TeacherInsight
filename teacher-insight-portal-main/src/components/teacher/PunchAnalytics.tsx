@@ -17,6 +17,8 @@ import {
 } from "recharts";
 import { CalendarDays, ClipboardList, Merge, Users } from "lucide-react";
 import type { TeacherPunchEntry } from "@/lib/teacherPunches";
+import type { ShgAssignment } from "@/lib/teacherShgs";
+import { matchCenterName } from "@/lib/shgCenters";
 import { countReviewActivities, REVIEW_ACTIVITY_RATE, type TeacherReviewEntry } from "@/lib/teacherReviews";
 
 const PAY_PER_CLASS = 300;
@@ -33,6 +35,7 @@ interface PunchAnalyticsProps {
   month?: string;
   /** Teacher view: list every class in the period. Admin/summary view omits the detail table. */
   detailed?: boolean;
+  shgAssignments?: ShgAssignment[];
 }
 
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -48,7 +51,7 @@ const StatChip = ({ label, value }: { label: string; value: string }) => (
   </div>
 );
 
-export const PunchAnalytics = ({ entries, title, description, breakdown, activity, month, detailed }: PunchAnalyticsProps) => {
+export const PunchAnalytics = ({ entries, title, description, breakdown, activity, month, detailed, shgAssignments }: PunchAnalyticsProps) => {
   // Uncontrolled mode (admin): own selector defaulting to the latest month,
   // matching the invoice flow's month-scoped view.
   const [internalMonth, setInternalMonth] = useState<string | null>(null);
@@ -72,6 +75,17 @@ export const PunchAnalytics = ({ entries, title, description, breakdown, activit
   // Duplicate punches (same class + date + subject) are shown but never counted.
   const unique = useMemo(() => filtered.filter((entry) => !entry.duplicate), [filtered]);
   const duplicateCount = filtered.length - unique.length;
+
+  const zeroClassShgs = useMemo(() => {
+    const assignments = new Map((shgAssignments ?? []).map((assignment) => [assignment.shg, assignment]));
+    const names = [...assignments.keys()];
+    const activeCenters = new Set(
+      unique.map((entry) => matchCenterName(entry.center, names)).filter(Boolean)
+    );
+    return [...assignments.values()]
+      .filter((assignment) => !activeCenters.has(assignment.shg))
+      .sort((a, b) => a.shg.localeCompare(b.shg));
+  }, [shgAssignments, unique]);
 
   const stats = useMemo(() => {
     const totalStudents = unique.reduce((sum, entry) => sum + entry.students, 0);
@@ -178,7 +192,7 @@ export const PunchAnalytics = ({ entries, title, description, breakdown, activit
 
   const paymentTotal = useMemo(() => teacherRows.reduce((sum, row) => sum + row.payment, 0), [teacherRows]);
 
-  if (!entries.length) {
+  if (!entries.length && !shgAssignments?.length) {
     return (
       <Card className="border-none bg-white/90 shadow-lg">
         <CardHeader>
@@ -226,6 +240,41 @@ export const PunchAnalytics = ({ entries, title, description, breakdown, activit
           <StatChip label="Merged classes" value={String(stats.merged)} />
           <StatChip label="Duplicates caught" value={String(duplicateCount)} />
         </div>
+
+        {shgAssignments && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4">
+            <h3 className="font-semibold text-slate-900">SHGs with zero classes ({zeroClassShgs.length})</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Assigned SHGs with no logged classes {activeMonth === "all" ? "across all months" : `in ${punchMonthLabel(activeMonth)}`}.
+            </p>
+            {zeroClassShgs.length > 0 ? (
+              <div className="mt-3 overflow-x-auto rounded-lg border bg-white/80">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>SHG</TableHead>
+                      <TableHead>Reporting teacher</TableHead>
+                      <TableHead>Branch</TableHead>
+                      <TableHead className="text-right">Classes</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {zeroClassShgs.map((assignment) => (
+                      <TableRow key={assignment.shg}>
+                        <TableCell className="font-medium">{assignment.shg}</TableCell>
+                        <TableCell>{assignment.reportingTeacher || "—"}</TableCell>
+                        <TableCell>{assignment.branch || "—"}</TableCell>
+                        <TableCell className="text-right font-semibold">0</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-slate-600">Every assigned SHG has logged classes in this period.</p>
+            )}
+          </div>
+        )}
 
         <div className="grid gap-6 lg:grid-cols-2">
           {classesPerMonth.length > 1 && (
