@@ -26,7 +26,11 @@ const COLUMN_ALIASES: Record<keyof ColumnIndices, string[]> = {
   improvement: ["howclassescanbeimproved", "improvement"],
   assetFeedback: ["assetmiccamlight", "assetfeedback"],
   ptm: ["careermapsawarenessptmhappened", "ptm"],
-  activityType: ["areyoudoingcareercounsellingorfeedback", "activitytype"],
+  activityType: [
+    "whichoneoftheseareyouperforming",
+    "areyoudoingcareercounsellingorfeedback",
+    "activitytype",
+  ],
 };
 
 const REQUIRED_COLUMNS: Array<keyof ColumnIndices> = ["timestamp", "teacher", "shg"];
@@ -74,7 +78,11 @@ export async function fetchTeacherReviewData(): Promise<TeacherReviewEntry[]> {
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
-    const teacher = getValue(row, columnIndices.teacher);
+    const activityType = getValue(row, columnIndices.activityType);
+    // Counselling visits leave "Review about which teacher?" blank — the
+    // reviewer is the reporting teacher running the session at their own SHG.
+    const isCounsellingRow = activityType.toLowerCase().includes("counselling");
+    const teacher = getValue(row, columnIndices.teacher) || (isCounsellingRow ? getValue(row, columnIndices.reviewer) : "");
     if (!teacher) continue;
 
     const shg = getValue(row, columnIndices.shg);
@@ -92,7 +100,7 @@ export async function fetchTeacherReviewData(): Promise<TeacherReviewEntry[]> {
       improvement: getValue(row, columnIndices.improvement),
       assetFeedback: getValue(row, columnIndices.assetFeedback),
       ptm: getValue(row, columnIndices.ptm),
-      activityType: getValue(row, columnIndices.activityType),
+      activityType,
       date,
       monthKey,
     });

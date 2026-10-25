@@ -83,6 +83,7 @@ const StatTile = ({
 
 export const ShgPunchRecords = ({ punches, reviewedPunches = [], audits = [], centers = [], month = "all" }: ShgPunchRecordsProps) => {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [subjectFilter, setSubjectFilter] = useState("all");
 
   const scopedPunches = useMemo(
     () => (month === "all" ? punches : punches.filter((entry) => entry.monthKey === month)),
@@ -149,9 +150,27 @@ export const ShgPunchRecords = ({ punches, reviewedPunches = [], audits = [], ce
 
   const active = clusters.find((cluster) => cluster.key === selectedKey) ?? clusters[0] ?? null;
 
+  const activeSubjects = useMemo(
+    () =>
+      active
+        ? Array.from(new Set(active.entries.map((entry) => entry.subject).filter(Boolean))).sort()
+        : [],
+    [active]
+  );
+
+  const activeEntries = useMemo(
+    () =>
+      !active
+        ? []
+        : subjectFilter === "all"
+          ? active.entries
+          : active.entries.filter((entry) => entry.subject === subjectFilter),
+    [active, subjectFilter]
+  );
+
   const activeStats = useMemo(() => {
     if (!active) return null;
-    const unique = active.entries.filter((entry) => !entry.duplicate);
+    const unique = activeEntries.filter((entry) => !entry.duplicate);
     const totalStudents = unique.reduce((sum, entry) => sum + entry.students, 0);
     return {
       classes: unique.length,
@@ -159,11 +178,11 @@ export const ShgPunchRecords = ({ punches, reviewedPunches = [], audits = [], ce
       avgStudents: unique.length ? Math.round((totalStudents / unique.length) * 10) / 10 : 0,
       subjects: new Set(unique.map((entry) => entry.subject.trim().toLowerCase()).filter(Boolean)).size,
     };
-  }, [active]);
+  }, [active, activeEntries]);
 
   const rows = useMemo(
-    () => (active ? [...active.entries].sort((a, b) => parseWhen(b) - parseWhen(a)) : []),
-    [active]
+    () => [...activeEntries].sort((a, b) => parseWhen(b) - parseWhen(a)),
+    [activeEntries]
   );
 
   if (!clusters.length) return null;
@@ -183,19 +202,36 @@ export const ShgPunchRecords = ({ punches, reviewedPunches = [], audits = [], ce
               first. Teacher names are hidden.
             </p>
           </div>
-          <Select value={active?.key ?? ""} onValueChange={setSelectedKey}>
-            <SelectTrigger className="w-full sm:w-72">
-              <SelectValue placeholder="Select SHG center" />
-            </SelectTrigger>
-            <SelectContent className="max-h-72">
-              {clusters.map((cluster) => (
-                <SelectItem key={cluster.key} value={cluster.key}>
-                  {cluster.label}
-                  {cluster.reviewedOnly ? " (reviewed)" : ""}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Select value={active?.key ?? ""} onValueChange={(key) => { setSelectedKey(key); setSubjectFilter("all"); }}>
+              <SelectTrigger className="w-full sm:w-72">
+                <SelectValue placeholder="Select SHG center" />
+              </SelectTrigger>
+              <SelectContent className="max-h-72">
+                {clusters.map((cluster) => (
+                  <SelectItem key={cluster.key} value={cluster.key}>
+                    {cluster.label}
+                    {cluster.reviewedOnly ? " (reviewed)" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {activeSubjects.length > 0 && (
+              <Select value={subjectFilter} onValueChange={setSubjectFilter}>
+                <SelectTrigger className="w-full sm:w-44">
+                  <SelectValue placeholder="All subjects" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All subjects</SelectItem>
+                  {activeSubjects.map((subject) => (
+                    <SelectItem key={subject} value={subject}>
+                      {subject}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">

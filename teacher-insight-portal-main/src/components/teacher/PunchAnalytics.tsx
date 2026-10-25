@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { LinkedText } from "@/components/teacher/LinkedText";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -77,16 +77,58 @@ export const PunchAnalytics = ({ entries, title, description, breakdown, activit
   const unique = useMemo(() => filtered.filter((entry) => !entry.duplicate), [filtered]);
   const duplicateCount = filtered.length - unique.length;
 
-  const zeroClassShgs = useMemo(() => {
+  const shgRows = useMemo(() => {
     const assignments = new Map((shgAssignments ?? []).map((assignment) => [assignment.shg, assignment]));
     const names = [...assignments.keys()];
-    const activeCenters = new Set(
-      unique.map((entry) => matchCenterName(entry.center, names)).filter(Boolean)
-    );
+    const perShg = new Map<string, { classes: number; students: number; lastDate: string }>();
+    unique.forEach((entry) => {
+      const canonical = matchCenterName(entry.center, names);
+      if (!canonical) return;
+      const row = perShg.get(canonical) ?? { classes: 0, students: 0, lastDate: "" };
+      row.classes += 1;
+      row.students += entry.students;
+      if ((entry.date ?? "") > row.lastDate) row.lastDate = entry.date ?? "";
+      perShg.set(canonical, row);
+    });
     return [...assignments.values()]
-      .filter((assignment) => !activeCenters.has(assignment.shg))
-      .sort((a, b) => a.shg.localeCompare(b.shg));
+      .map((assignment) => ({
+        ...assignment,
+        classes: perShg.get(assignment.shg)?.classes ?? 0,
+        students: perShg.get(assignment.shg)?.students ?? 0,
+        lastDate: perShg.get(assignment.shg)?.lastDate ?? "",
+      }))
+      .sort((a, b) => a.classes - b.classes || a.shg.localeCompare(b.shg));
   }, [shgAssignments, unique]);
+
+  const zeroClassShgs = useMemo(() => shgRows.filter((row) => row.classes === 0), [shgRows]);
+
+  // Admin: review SHGs per reporting teacher — filter dropdown + grouped table.
+  const [shgTeacherFilter, setShgTeacherFilter] = useState("all");
+  const reportingTeachers = useMemo(
+    () =>
+      Array.from(new Set(shgRows.map((row) => row.reportingTeacher || "—"))).sort((a, b) =>
+        a.localeCompare(b)
+      ),
+    [shgRows]
+  );
+  const shgGroups = useMemo(() => {
+    const grouped = new Map<string, typeof shgRows>();
+    shgRows.forEach((row) => {
+      const teacher = row.reportingTeacher || "—";
+      if (shgTeacherFilter !== "all" && teacher !== shgTeacherFilter) return;
+      const list = grouped.get(teacher) ?? [];
+      list.push(row);
+      grouped.set(teacher, list);
+    });
+    return Array.from(grouped.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([teacher, rows]) => ({
+        teacher,
+        rows,
+        classes: rows.reduce((sum, row) => sum + row.classes, 0),
+        zeroShgs: rows.filter((row) => row.classes === 0).length,
+      }));
+  }, [shgRows, shgTeacherFilter]);
 
   const stats = useMemo(() => {
     const totalStudents = unique.reduce((sum, entry) => sum + entry.students, 0);
@@ -243,37 +285,79 @@ export const PunchAnalytics = ({ entries, title, description, breakdown, activit
         </div>
 
         {shgAssignments && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4">
-            <h3 className="font-semibold text-slate-900">SHGs with zero classes ({zeroClassShgs.length})</h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Assigned SHGs with no logged classes {activeMonth === "all" ? "across all months" : `in ${punchMonthLabel(activeMonth)}`}.
-            </p>
-            {zeroClassShgs.length > 0 ? (
-              <div className="mt-3 overflow-x-auto rounded-lg border bg-white/80">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>SHG</TableHead>
-                      <TableHead>Reporting teacher</TableHead>
-                      <TableHead>Branch</TableHead>
-                      <TableHead className="text-right">Classes</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {zeroClassShgs.map((assignment) => (
-                      <TableRow key={assignment.shg}>
-                        <TableCell className="font-medium">{assignment.shg}</TableCell>
-                        <TableCell>{assignment.reportingTeacher || "—"}</TableCell>
-                        <TableCell>{assignment.branch || "—"}</TableCell>
-                        <TableCell className="text-right font-semibold">0</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+          <div>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="font-semibold text-slate-900">
+                  All assigned SHGs ({shgRows.length}) · {zeroClassShgs.length} with zero classes
+                </h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Classes logged {activeMonth === "all" ? "across all months" : `in ${punchMonthLabel(activeMonth)}`}, grouped by reporting teacher — zero-class SHGs listed first.
+                </p>
               </div>
-            ) : (
-              <p className="mt-3 text-sm text-slate-600">Every assigned SHG has logged classes in this period.</p>
-            )}
+              <Select value={shgTeacherFilter} onValueChange={setShgTeacherFilter}>
+                <SelectTrigger className="w-44">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All teachers</SelectItem>
+                  {reportingTeachers.map((name) => (
+                    <SelectItem key={name} value={name}>
+                      {name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="max-h-[420px] overflow-auto rounded-lg border border-white/60 bg-white/80">
+              <Table>
+                <TableHeader className="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_hsl(var(--border))]">
+                  <TableRow>
+                    <TableHead>SHG</TableHead>
+                    <TableHead>Branch</TableHead>
+                    <TableHead className="text-right">Classes</TableHead>
+                    <TableHead className="text-right">Students</TableHead>
+                    <TableHead className="text-right">Last class</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {shgGroups.map((group) => (
+                    <Fragment key={group.teacher}>
+                      <TableRow className="bg-slate-100/80 hover:bg-slate-100/80">
+                        <TableCell colSpan={3} className="font-semibold text-slate-900">
+                          <span className="flex items-center gap-1.5">
+                            <Users className="h-4 w-4 text-primary" />
+                            {group.teacher}
+                            <span className="font-normal text-muted-foreground">
+                              — {group.rows.length} SHG{group.rows.length === 1 ? "" : "s"}
+                              {group.zeroShgs > 0 ? ` · ${group.zeroShgs} with zero classes` : ""}
+                            </span>
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right font-semibold">{group.classes}</TableCell>
+                        <TableCell colSpan={2} />
+                      </TableRow>
+                      {group.rows.map((assignment) => (
+                        <TableRow key={assignment.shg} className={assignment.classes === 0 ? "bg-amber-50/70" : undefined}>
+                          <TableCell className="pl-8 font-medium">
+                            {assignment.shg}
+                            {assignment.classes === 0 && (
+                              <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+                                zero classes
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell>{assignment.branch || "—"}</TableCell>
+                          <TableCell className="text-right font-semibold">{assignment.classes}</TableCell>
+                          <TableCell className="text-right">{assignment.students || "—"}</TableCell>
+                          <TableCell className="text-right">{assignment.lastDate || "—"}</TableCell>
+                        </TableRow>
+                      ))}
+                    </Fragment>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </div>
         )}
 
